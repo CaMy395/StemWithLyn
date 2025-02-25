@@ -1,0 +1,1254 @@
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: white;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Apply consistent styling to all page headers */
+h1, h2 {
+  text-align: center;
+  color: #dda0dd !important; /* The purple color from Clients page */
+  font-size: 2rem;
+}
+
+
+
+.location-link {
+  color: gold; /* Change 'blue' to your desired color */
+  text-decoration: underline; /* Optional: add underline */
+}
+
+/* Target all links in the menu */
+nav ul li a {
+  color:  rgba(255, 235, 119, 0.564);  /* Default color for links */
+  text-decoration: none; /* Remove underline */
+  font-weight: normal;
+}
+
+/* Change color on hover */
+nav ul li a:hover {
+  color: red; /* Darker color on hover */
+}
+
+/* Active link color (if using 'active' class or similar) */
+nav ul li a.active {
+  color: #e74c3c; /* Active link color */
+}
+
+
+/* Login.css */
+.login-page {
+  background-color: white; /* Full-page black background */
+  color: black; /* Default text color */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  margin: 0;
+}
+
+.login-container {
+  background-color: #d1d0d0; /* Dark gray container */
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+}
+
+
+
+input {
+  padding: 10px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background-color: #222;
+  color: white;
+}
+
+input:focus {
+  outline: none;
+  border-color: #dda0dd; /* Your app's theme color */
+}
+
+/* Apply the same button styles everywhere */
+button {
+  background-color: #dda0dd;
+  color: white;
+  padding: 10px 15px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: #a800a8;
+}
+
+button:disabled {
+  background-color: #555;
+  cursor: not-allowed;
+}
+
+button:hover:not(:disabled) {
+  background-color: #a800a8; /* Slightly brighter hover effect */
+}
+
+/* Register.css */
+.register-page {
+  background-color: white; /* Full-page black background */
+  color: black; /* Default text color */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  margin: 0;
+}
+
+.payment-title {
+  color: #dda0dd !important;
+  font-size: 24px !important;
+  margin-bottom: 15px !important;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  font-size: 14px;
+}
+
+input,
+select {
+  padding: 10px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background-color: #222;
+  color: white;
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: #dda0dd; /* Your app's theme color */
+}
+
+button {
+  padding: 10px;
+  background-color: #dda0dd; /* Your app's theme color */
+  border: none;
+  color: white;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+button:disabled {
+  background-color: #555;
+  cursor: not-allowed;
+}
+
+button:hover:not(:disabled) {
+  background-color: #a80000; /* Slightly brighter hover effect */
+}
+
+
+/* Custom styles for the Tutoring Intake page */
+.tutoring-page-wrapper {
+  background-color: white !important;
+  color: black !important;
+  min-height: 10vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0px;
+  margin: 0; /* Remove any margin */
+}
+
+
+/* Navigation Bar Styling */
+.app-nav {
+  display: flex;
+  justify-content: space-between;
+  color: white;
+  align-items: center;
+  background-color: #dda0dd; /* Slightly lighter background */
+  padding: 10px 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+/* Left Section */
+.nav-left {
+  flex: 1;
+}
+
+.welcome-message {
+  color: white;
+  font-size: 18px;
+  font-weight: bold;
+}
+
+/* Center Section (Menu Links) */
+.nav-center {
+  flex: 2;
+  text-align: center;
+}
+
+.menu {
+  display: inline-block;
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+}
+
+.menu li {
+  display: inline;
+  margin: 0 10px;
+}
+
+.menu a {
+  color: white;
+  text-decoration: none;
+  font-weight: 400; /* Lighter font weight */
+  font-size: 16px; /* Slightly smaller font size */
+}
+
+.menu a:hover {
+  text-decoration: underline;
+}
+
+/* Right Section (Logout Button) */
+.nav-right {
+  flex: 1;
+  text-align: right;
+}
+
+.logout-button {
+  padding: 10px;
+  background-color: #dda0dd; /* Theme color */
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.logout-button:hover {
+  background-color: #a80000; /* Slightly lighter hover effect */
+}
+
+
+/* UserList Heading */
+.userlist-container h1 {
+  margin-bottom: 20px;
+  font-size: 30px;
+  color: #dda0dd !important; /* Theme color */
+  text-align: center;
+}
+/* UserList Heading */
+.userlist-container h2 {
+  margin-bottom: 20px;
+  font-size: 24px;
+  color: white; /* Theme color */
+}
+
+/* Table Styling */
+.userlist-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+.userlist-table th,
+.userlist-table td {
+  border: 1px solid #d1d0d0;
+  padding: 10px;
+  text-align: center;
+  font-size: 16px;
+}
+
+.userlist-table th {
+  background-color: #dda0dd;
+  color: white;
+  font-weight: bold;
+}
+
+.userlist-table td {
+  background-color: #e4e4e4;
+}
+
+/* No Users Message */
+.no-users {
+  color: gray;
+  font-style: italic;
+  margin-top: 20px;
+}
+
+/* General link styles */
+a {
+  color: white; /* Default link color */
+  text-decoration: none; /* Remove underline */
+}
+
+/* Hover effect */
+a:hover {
+  color: #dda0dd; /* Color on hover */
+  text-decoration: underline; /* Optional */
+}
+
+/* Visited links */
+a:visited {
+  color: #4c294c; /* Same as unvisited to prevent purple */
+}
+
+/* Active link */
+a:active {
+  color: orange; /* Color when the link is clicked */
+}
+
+.agreement {
+  margin-top: 15px;
+  font-size: 14px;
+  display: flex;
+  align-items: center; /* Align checkbox and text vertically */
+  gap: 5px; /* Add space between the checkbox and text */
+}
+
+.agreement-checkbox {
+  transform: scale(1); /* Optional: Make the checkbox slightly larger */
+  margin: 0; /* Remove extra margins */
+}
+
+.agreement a {
+  color: #FFD700; /* Yellow for your theme */
+  text-decoration: none;
+}
+
+.agreement a:hover {
+  text-decoration: underline;
+}
+
+
+.filters {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.filter-input {
+  padding: 10px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  width: 180px;
+}
+
+.totals {
+  margin-bottom: 20px;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.error-message {
+  color: red;
+  font-weight: bold;
+}
+
+.table-container {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+}
+
+/* Modal Overlay */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent background */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000; /* Ensure it's on top of everything */
+}
+
+/* Modal Content */
+.modal-content {
+  background: rgb(42, 41, 41);
+  padding: 20px;
+  border-radius: 8px;
+  width: 90%; /* Smaller width */
+  max-width: 500px; /* Restrict the maximum width */
+  max-height: 80%; /* Restrict the height to 80% of the viewport */
+  overflow-y: auto; /* Enable vertical scrolling for long content */
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  text-align: left; /* Align content to the left for readability */
+}
+
+/* Close Button Styling */
+.modal-content button {
+  margin-top: 10px;
+  padding: 10px 15px;
+  background-color: #dda0dd; /* Match your theme color */
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.modal-content button:hover {
+  background-color: #a20000;
+}
+
+/* Adjust modal content scrolling */
+.modal-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-content::-webkit-scrollbar-thumb {
+  background-color: #cccccc;
+  border-radius: 4px;
+}
+
+.modal-content::-webkit-scrollbar-thumb:hover {
+  background-color: #999999;
+}
+
+.error-message {
+    color: red;
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+
+.modal-button.use {
+  background: #dda0dd;
+  color: white;
+}
+
+.task-container {
+  background-color: #f4f4f9;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+h2 {
+  text-align: center;
+  color: #333;
+}
+
+.task-input-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.task-input {
+  padding: 10px;
+  font-size: 16px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  outline: none;
+}
+
+.task-input:focus {
+  border-color: #4CAF50;
+}
+
+.add-task-btn {
+  background-color: #4CAF50;
+  color: white;
+  padding: 10px;
+  font-size: 16px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.add-task-btn:hover {
+  background-color: #45a049;
+}
+
+.notification {
+  color: green;
+  text-align: center;
+}
+
+.task-list {
+  list-style: none;
+  padding: 0;
+}
+
+.task-item {
+  background-color: #fff;
+  padding: 15px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.task-item.pending {
+  border-left: 5px solid #ff9800;
+}
+
+.task-item.completed {
+  border-left: 5px solid #4caf50;
+  text-decoration: line-through;
+}
+
+.task-details {
+  font-size: 16px;
+  color: #333;
+}
+
+.complete-btn,
+.delete-btn {
+  background-color: #007bff;
+  color: white;
+  padding: 8px 16px;
+  margin-right: 5px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-top: 10px;
+}
+
+.complete-btn:hover {
+  background-color: #0056b3;
+}
+
+.delete-btn {
+  background-color: #dc3545;
+}
+
+.delete-btn:hover {
+  background-color: #c82333;
+}
+
+
+.supplemental-items-page {
+  padding: 20px;
+}
+
+.supplemental-items-page h1 {
+  font-size: 2rem;
+  margin-bottom: 10px;
+}
+
+.supplemental-items-page h2 {
+  font-size: 1.5rem;
+  margin-top: 20px;
+}
+
+.supplemental-items-page .item {
+  margin-bottom: 20px;
+}
+
+.supplemental-items-page ul {
+  list-style-type: none;
+  padding-left: 0;
+}
+
+.supplemental-items-page ul li {
+  margin: 5px 0;
+}
+
+.supplemental-items-page ul li a {
+  text-decoration: none;
+  color: #007BFF;
+}
+
+.supplemental-items-page ul li a:hover {
+  text-decoration: underline;
+}
+
+
+.edit-button {
+  background-color: #dda0dd; /* Your theme color */
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.edit-button:hover {
+  background-color: #a50000; /* Slightly lighter shade for hover effect */
+}
+
+body.hide-menu .navigation-menu {
+  display: none;
+}
+
+
+.admin-intake-forms-container {
+  padding: 20px;
+}
+
+.error-message {
+  color: red;
+  font-weight: bold;
+  margin-bottom: 20px;
+}
+
+.intake-forms-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+.intake-forms-table th, .intake-forms-table td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  text-align: left;
+}
+
+.intake-forms-table th {
+  background-color: #020000;
+  font-weight: bold;
+}
+
+
+.intake-forms-table tr:hover {
+  background-color: #4d4c4c;
+}
+
+.table-scroll-container {
+  max-height: 400px; /* Adjust height as needed */
+  overflow-y: auto;
+  border: 1px solid #ccc;
+}
+
+.intake-forms-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.intake-forms-table th,
+.intake-forms-table td {
+  padding: 5px;
+  text-align: center;
+  border-bottom: 1px solid #ccc;
+}
+
+.intake-forms-table th {
+  background-color: #020000;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+/* General Calendar Styles */
+.react-calendar {
+    background-color: #1e1e1e; /* Match your app's dark background */
+    color: #ffffff; /* White text for contrast */
+    font-family: Arial, sans-serif;
+    border: 1px solid #dda0dd; /* Match your app's theme color */
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.5);
+    width: 100%;
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+/* Calendar Header */
+.react-calendar__navigation {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.react-calendar__navigation button {
+    background: none;
+    color: #dda0dd;
+    border: none;
+    cursor: pointer;
+    padding: 5px 10px;
+    font-size: 16px;
+    font-weight: bold;
+    transition: color 0.3s;
+}
+
+.react-calendar__navigation button:hover {
+    color: #dda0dd; /* Highlighted color on hover */
+}
+
+/* Weekday Labels */
+.react-calendar__month-view__weekdays {
+    text-align: center;
+    text-transform: uppercase;
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    color: #dda0dd; /* Match app theme */
+}
+
+/* Days */
+.react-calendar__tile {
+    background-color: #2b2b2b; /* Tile background color */
+    color: #2b2b2b; /* Tile text color */
+    border-radius: 5px;
+    padding: 10px;
+    margin: 2px;
+    text-align: center;
+    transition: all 0.3s;
+}
+
+.react-calendar__tile:hover {
+    background-color: #dda0dd; /* Highlight tile on hover */
+    color: #2b2b2b;
+    transform: scale(1.05);
+}
+
+/* Selected and Active Dates */
+.react-calendar__tile--active {
+    background-color: #dda0dd; /* Selected date color */
+    color: #ffffff;
+    border-radius: 5px;
+}
+
+.react-calendar__tile--now {
+    background-color: #dda0dd !important; /* Highlight today's date */
+    border: 2px solid #dda0dd;
+    color: #ffffff;
+    font-weight: bold;
+}
+
+/* Disabled Dates */
+.react-calendar__tile--disabled {
+    background-color: #3a3a3a;
+    color: #777777;
+    cursor: not-allowed;
+}
+
+/* Custom Tile Content */
+.react-calendar__tile div {
+    font-size: 12px;
+    margin-top: 5px;
+}
+
+.week-view {
+  display: flex;
+  flex-direction: column;
+  overflow-x: auto;
+}
+
+
+.week-view table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.week-view th,
+.week-view td {
+  border: 1px solid #ccc;
+  text-align: center;
+  vertical-align: top;
+  padding: 5px;
+}
+
+.event {
+  margin: 5px 0;
+  padding: 5px;
+  border-radius: 4px;
+  font-size: 12px;
+  background-color: #dda0dd; /* App theme color */
+  color: white;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.appointment {
+  background-color: #ffd0d0;
+  color: #b30000;
+}
+
+.button-container {
+  text-align: right;
+  margin-top: -50px; /* Move the button up slightly */
+  margin-bottom: 50px;
+}
+
+.button-container button {
+  margin-top: -5px; /* Additional adjustment for button position */
+  padding: 10px 15px;
+  background-color: #dda0dd;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.button-container button:hover {
+  background-color: #a00000;
+}
+
+.event.appointment {
+  background-color: #f0d1d1; /* Light pink for appointments */
+  color: black; /* Dark red text */
+  padding: 5px;
+  margin: 2px 0;
+  border-radius: 4px;
+  border: 1px solid #dda0dd;
+}
+
+.blocked-indicator {
+  color: #dda0dd;
+  font-weight: bold;
+  text-align: center;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+td {
+  transition: background-color 0.3s;
+}
+
+td:hover {
+  background-color: #f0f0f0;
+}
+
+td.blocked {
+  background-color: #d3d3d3;
+  pointer-events: none; /* Prevent interaction with blocked cells */
+}
+
+.week-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.week-navigation button {
+  background-color: #dda0dd; /* App theme color */
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 5px;
+}
+
+.week-navigation button:hover {
+  background-color: #a00000;
+}
+
+.week-navigation h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.event.appointment {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background-color: #f0d1d1; /* Light pink */
+  color: #dda0dd; /* Dark red */
+  border: 1px solid #dda0dd;
+  border-radius: 4px;
+  z-index: 5;
+  overflow: hidden; /* Prevent overflow */
+  white-space: normal; /* Allow text wrapping */
+  word-wrap: break-word; /* Ensure long words break */
+  padding: 5px; /* Add padding for readability */
+  font-size: 11px; /* Adjust font size for readability */
+}
+
+.notification-badge {
+  display: inline-block;
+  background-color: red;
+  color: white;
+  border-radius: 50%;
+  padding: 2px 6px;
+  font-size: 12px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.event label {
+  font-size: 12px;
+  margin-left: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.event input[type="checkbox"] {
+  transform: scale(1.2);
+  cursor: pointer;
+}
+
+
+.event.overlapping {
+  left: 40%; /* Shift overlapping events further to the right */
+}
+
+.event.appointment {
+  background-color: #f0d1d1; /* Light pink for appointments */
+  color: black;
+}
+
+.grid-container {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr); /* Adjust the number of columns as needed */
+  gap: 10px;
+  width: 100%;
+}
+
+.grid-column {
+  position: relative;
+  min-width: 150px; /* Adjust column width to ensure it accommodates wider content */
+}
+
+
+/* Hover effect for appointments and gigs */
+.event.appointment:hover {
+  transform: scale(1.2); /* Enlarge the block more significantly */
+  z-index: 1000; /* Bring it to the very front */
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3); /* Stronger shadow for clarity */
+  transition: transform 0.2s ease, box-shadow 0.2s ease; /* Smooth animation */
+}
+
+/* Ensure smooth transitions for non-hovered states */
+.event.appointment{
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Prevent overlapping and ensure expanded content is visible */
+.grid-container .event {
+  overflow: visible;
+  position: relative;
+}
+/* Ensure appointment visibility and prevent overflow clipping */
+.appointment {
+  overflow: hidden;
+  position: relative;
+  transition: transform 0.2s ease, z-index 0.2s ease;
+}
+
+/* Expand appointment on hover */
+.appointment:hover {
+  z-index: 10; /* Bring the hovered element to the front */
+  transform: scale(1.1); /* Slightly expand the element */
+  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3); /* Add shadow for emphasis */
+  overflow: visible; /* Ensure all content, including checkboxes, is visible */
+}
+
+/* Prevent content inside the appointment from being clipped */
+.appointment label {
+  white-space: nowrap; /* Ensure checkboxes and labels are not cut off */
+}
+
+
+/* CSS for the Tutoring Intake Form page */
+
+/* Tutoring Intake Form Page Styles */
+.tutoring-intake-form {
+  background-color: white; /* White background */
+  color: black; /* Black text */
+  font-family: 'Arial', sans-serif;
+  min-height: 100vh; /* Full viewport height */
+  display: flex;
+  justify-content: center; /* ✅ Center horizontally */
+  align-items: center; /* ✅ Center vertically */
+  flex-direction: column; /* ✅ Ensure form stacks properly */
+  padding: 20px;
+}
+
+.intake-form-container {
+  background-color: #f9f9f9; /* Light gray background */
+  padding: 30px;
+  border-radius: 10px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* Subtle shadow */
+  max-width: 600px;
+  width: 100%; /* Ensures responsiveness */
+  text-align: center; /* ✅ Center text */
+}
+
+.tutoring-intake-form h1 {
+  text-align: center;
+  color: #dda0dd !important; /* Light purple for the header */
+  font-size: 2em;
+  margin-bottom: 20px;
+}
+
+.tutoring-intake-form label {
+  display: block;
+  font-size: 1em;
+  margin-bottom: 5px;
+  color: black; /* Black for label text */
+}
+
+.tutoring-intake-form input,
+.tutoring-intake-form select,
+.tutoring-intake-form textarea {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 20px;
+  border: 1px solid #dda0dd; /* Light purple border */
+  border-radius: 5px;
+  background-color: white; /* White background for input fields */
+  color: black; /* Black text */
+  font-size: 1em;
+}
+
+.tutoring-intake-form input:focus,
+.tutoring-intake-form select:focus,
+.tutoring-intake-form textarea:focus {
+  outline: none;
+  border-color: #ffd700; /* Gold border on focus */
+  box-shadow: 0 0 5px #ffd700;
+}
+
+.tutoring-intake-form button {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  font-size: 1.2em;
+  font-weight: bold;
+  color: black; /* Black text for buttons */
+  background-color: #ffd700; /* Gold background for buttons */
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.tutoring-intake-form button:hover {
+  background-color: #dda0dd; /* Light purple on hover */
+  color: white; /* White text on hover */
+}
+
+
+.admin-availability {
+  max-width: 800px;
+  margin: 20px auto;
+  padding: 20px;
+  background: #333;
+  color: white;
+  border-radius: 8px;
+  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+.admin-availability h3 {
+  text-align: center;
+  font-size: 1.8rem;
+  margin-bottom: 15px;
+}
+
+.availability-section {
+  margin-bottom: 20px;
+  padding: 15px;
+  background: #444;
+  border-radius: 6px;
+}
+
+.availability-section h4 {
+  font-size: 1.5rem;
+  margin-bottom: 8px;
+  color: rgba(255, 235, 119, 0.564); /* Gold color for section headers */
+  border-bottom: 2px solid rgba(255, 235, 119, 0.564);
+  padding-bottom: 5px;
+}
+
+.availability-section ul {
+  list-style-type: none;
+  padding: 0;
+}
+
+.availability-section li {
+  font-size: 1.2rem;
+  padding: 8px 12px;
+  background: #555;
+  margin-bottom: 6px;
+  border-radius: 5px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.availability-section li strong {
+  font-weight: bold;
+  color: rgba(255, 235, 119, 0.564);
+}
+
+/* Client Scheduling Page Styling */
+.client-scheduling {
+  max-width: 800px;
+  margin: 100px auto 0;
+  padding: 20px;
+  background-color: #f9f9f9;
+  color: white;
+  border-radius: 10px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+  text-align: center;
+}
+
+.client-scheduling h2 {
+  font-family: 'Cinzel', serif;
+  font-size: 2rem;
+  color: rgba(255, 235, 119, 0.564); /* Gold accent */
+  margin-bottom: 20px;
+}
+
+.client-scheduling input {
+  width: 80%;
+  padding: 10px;
+  font-size: 16px;
+  border-radius: 5px;
+  border: 2px solid #dda0dd;
+  margin-bottom: 20px;
+}
+
+.available-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.available-slot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #ffcfff6a;
+  padding: 10px;
+  border-radius: 5px;
+  color: black;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.available-slot span {
+  flex: 1;
+  text-align: left;
+}
+
+.available-slot button {
+  background-color: #dda0dd;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 5px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+.available-slot button:hover {
+  background-color: #dda0dd;
+  color: black;
+}
+
+label, span, div {
+  color: black !important;
+}
+
+/* Light input fields */
+input, textarea, select {
+  background-color: white !important;
+  color: black !important;
+  border: 1px solid #ccc !important;
+  padding: 10px;
+  border-radius: 5px;
+  font-size: 16px;
+}
+
+/* Ensure placeholder text is visible */
+input::placeholder, textarea::placeholder {
+  color: #666 !important;
+}
+
+/* Focus styles */
+input:focus, textarea:focus, select:focus {
+  outline: none !important;
+  border-color: #dda0dd !important; /* Use theme color */
+  box-shadow: 0 0 5px rgba(139, 0, 0, 0.3);
+}
+
+/* Fix dark mode override */
+@media (prefers-color-scheme: dark) {
+  input, textarea, select {
+      background-color: white !important;
+      color: black !important;
+  }
+}
+
+
+/* Main Content */
+.dashboard-main {
+  margin-top: 20px;
+}
+
+.dashboard-overview,
+.dashboard-actions {
+  margin-bottom: 20px;
+  background: rgb(211, 211, 211);
+  padding: 20px;
+  border-radius: 5px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.dashboard-actions .actions-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.dashboard-header h1 {
+  margin: 0;
+}

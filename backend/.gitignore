@@ -1,0 +1,15 @@
+# Ignore environment files
+.env
+.env.production
+credentials/service-account-key.json
+
+# Ignore node_modules directory
+node_modules/
+
+# Ignore logs
+*.log
+
+
+temp/
+quotes/
+uploads/

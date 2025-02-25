@@ -1,0 +1,16 @@
+[
+    { "title": "Virtual Tutoring (1 hour, @ $50.00)", "category": "Tutoring"  },
+    { "title": "Virtual Tutoring Package (6 sessions, @ $250.00)", "category": "Tutoring"  },
+    { "title": "Virtual Tutoring Package (6 sessions - SCHEDULING)", "category": "Tutoring"  },
+    { "title": "Virtual Tutoring Package (10 sessions, @ $400)" , "category": "Tutoring" },
+    { "title": "Virtual Tutoring Package (10 sessions - SCHEDULING)" , "category": "Tutoring" },
+    { "title": "In-Person Tutoring (1 hour, @ $65.00)", "category": "Tutoring"  },
+    { "title": "In-Person Tutoring (6 sessions, @ $350.00)", "category": "Tutoring"  }, 
+    { "title": "In-Person Tutoring (6 sessions - SCHEDULING)", "category": "Tutoring"  }, 
+    { "title": "In-Person Tutoring (10 sessions, @ $580.00)", "category": "Tutoring"  },
+    { "title": "In-Person Tutoring (10 sessions - SCHEDULING)", "category": "Tutoring"  },
+    { "title": "Third Party Organization (1 hour)", "category": "Tutoring"  },
+    { "title": "Third Party Organization (In-Person) (1 hour)", "category": "Tutoring"  },
+    { "title": "United Mentors (1 hour)", "category": "Tutoring"  },
+    { "title": "United Mentors (In-Person) (1 hour)", "category": "Tutoring"  }
+]

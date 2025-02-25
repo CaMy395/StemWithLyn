@@ -1,0 +1,13 @@
+[2025-02-21T20:41:54.388Z] Email sent to caitlyn.myland@gmail.com
+[2025-02-21T20:41:55.436Z] Email sent to caitlyn.myland@aol.com
+[2025-02-21T20:41:56.366Z] Email sent to curl.lyn.19@gmail.com
+[2025-02-21T20:41:57.170Z] Email sent to shadeacee@gmail.com
+[2025-02-21T20:41:58.110Z] Email sent to readybartendingmarketing@gmail.com
+[2025-02-21T20:41:59.079Z] Email sent to Caitlyn.myland@gmail.com
+[2025-02-21T20:42:00.204Z] Email sent to johndoe@example.com
+[2025-02-21T20:42:01.161Z] Email sent to readybartending@gmail.com
+[2025-02-21T20:42:02.198Z] Email sent to caitlyn.mlyand@gmail.com
+[2025-02-21T20:42:03.173Z] Email sent to lakdj@gmail.com
+[2025-02-21T20:42:04.112Z] Email sent to fgsd@gmail.com
+[2025-02-21T20:42:05.250Z] Email sent to dfghf@gmail.com
+[2025-02-21T20:42:06.175Z] Email sent to Caitlyn.Myland@gmail.com
