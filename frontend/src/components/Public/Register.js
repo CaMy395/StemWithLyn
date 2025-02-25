@@ -10,16 +10,10 @@ const Register = () => {
         username: '',
         email: '',
         phone: '',
-        position: '',
-        preferred_payment_method: '',
-        payment_details: '',
         password: '',
         role: 'user',
     });
 
-    const [agreeToTerms, setAgreeToTerms] = useState(false);
-    const [w9Uploaded, setW9Uploaded] = useState(false); // Track W-9 status
-    const [showModal, setShowModal] = useState(false);
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -58,18 +52,6 @@ const Register = () => {
         }
     };
 
-    useEffect(() => {
-        const updateW9Status = () => {
-            const isW9Uploaded = localStorage.getItem('w9Uploaded') === 'true';
-            setW9Uploaded(isW9Uploaded);
-        };
-
-        window.addEventListener('w9StatusUpdated', updateW9Status);
-
-        return () => {
-            window.removeEventListener('w9StatusUpdated', updateW9Status);
-        };
-    }, []);
 
     return (
         <div className="register-page">
@@ -117,43 +99,6 @@ const Register = () => {
                         />
                     </label>
                     <label>
-                        Position:
-                        <select
-                            name="position"
-                            value={formData.position}
-                            onChange={handleChange}
-                            required
-                        >
-                            <option value="" disabled>Select a position</option>
-                            <option value="Bartender">Bartender</option>
-                            <option value="Server">Server</option>
-                            <option value="Barback">Barback</option>
-                        </select>
-                    </label>
-                    <label>
-                        Preferred Payment Method:
-                        <select
-                            name="preferred_payment_method"
-                            value={formData.preferred_payment_method}
-                            onChange={handleChange}
-                            required
-                        >
-                            <option value="" disabled>Select a payment method</option>
-                            <option value="CashApp">CashApp</option>
-                            <option value="Zelle">Zelle</option>
-                        </select>
-                    </label>
-                    <label>
-                        Payment Details:
-                        <input
-                            type="text"
-                            name="payment_details"
-                            value={formData.payment_details}
-                            onChange={handleChange}
-                            required
-                        />
-                    </label>
-                    <label>
                         Password:
                         <input
                             type="password"
@@ -170,30 +115,8 @@ const Register = () => {
                             <option value="admin">Admin</option>
                         </select>
                     </label>              
-                    <div className="agreement">
-                        <input
-                            type="checkbox"
-                            checked={agreeToTerms}
-                            onChange={(e) => setAgreeToTerms(e.target.checked)}
-                            disabled={!w9Uploaded} // Disable checkbox until W-9 is uploaded
-                        />
-                        <span>
-                            I agree to the{' '}
-                            <Link
-                                to="#"
-                                className="custom-link"
-                                onClick={(e) => {
-                                    e.preventDefault(); // Prevent page reload
-                                    setShowModal(true); // Show modal
-                                }}
-                            >
-                                Terms and Conditions
-                            </Link>
-                        </span>
-                    </div>
                     <button
                         type="submit"
-                        disabled={!agreeToTerms}
                         style={{
                             backgroundColor: '#8B0000',
                             color: 'white',
@@ -210,19 +133,6 @@ const Register = () => {
                     Already have an account? <Link to="/login">Login here</Link>
                 </p>
             </div>
-
-            {showModal && (
-                <TermsModal
-                    onClose={() => setShowModal(false)}
-                    onW9Upload={(uploaded) => {
-                        setW9Uploaded(uploaded);
-                        if (uploaded) {
-                            localStorage.setItem('w9Uploaded', 'true');
-                            window.dispatchEvent(new Event('w9StatusUpdated'));
-                        }
-                    }}
-                />
-            )}
         </div>
     );
 };

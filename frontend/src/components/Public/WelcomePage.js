@@ -11,6 +11,9 @@ const WelcomePage = () => {
                 <Link to="/tutoring-intake">
                     <button>Go to Tutoring Intake</button>
                 </Link>
+                <Link to="/login">
+                    <button>Login</button>
+                </Link>
             </div>
         </div>
     );

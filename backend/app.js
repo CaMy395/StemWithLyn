@@ -96,11 +96,14 @@ pool.on('connect', async (client) => {
 
 // POST endpoint for registration
 app.post('/register', async (req, res) => {
-    const { name, username, email, phone, position, preferred_payment_method, payment_details, password, role } = req.body;
+    const { name, username, email, phone, password, role = 'user' } = req.body;
 
     try {
         // Check if the username or email already exists
-        const existingUser = await pool.query('SELECT * FROM users WHERE username = $1 OR email = $2', [username, email]);
+        const existingUser = await pool.query(
+            'SELECT * FROM users WHERE username = $1 OR email = $2',
+            [username, email]
+        );
 
         if (existingUser.rowCount > 0) {
             return res.status(400).json({ error: 'Username or email already exists' });
@@ -109,10 +112,10 @@ app.post('/register', async (req, res) => {
         // Hash the password
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Insert the new user into the database
+        // Correct SQL Query: Remove extra placeholders ($7, $8, $9)
         const newUser = await pool.query(
-            'INSERT INTO users (name, username, email, phone, position, preferred_payment_method, payment_details, password, role) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
-            [name, username, email, phone, position, preferred_payment_method, payment_details, hashedPassword, role]
+            'INSERT INTO users (name, username, email, phone, password, role) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+            [name, username, email, phone, hashedPassword, role]
         );
 
         // Send registration email
@@ -123,9 +126,7 @@ app.post('/register', async (req, res) => {
             console.error('Error sending registration email:', emailError.message);
         }
 
-        // Respond with the newly created user (excluding the password)
-        const { password: _, ...userWithoutPassword } = newUser.rows[0];
-        res.status(201).json(userWithoutPassword);
+        res.status(201).json(newUser.rows[0]);
     } catch (error) {
         console.error('Error during registration:', error);
         res.status(500).json({ error: 'Internal server error' });
