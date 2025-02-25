@@ -13,11 +13,13 @@ import {
     sendRegistrationEmail,sendResetEmail, sendTutoringIntakeEmail, sendTutoringApptEmail, sendTutoringRescheduleEmail,sendCancellationEmail, sendTextMessage, sendTaskTextMessage,  sendEmailCampaign
 } from './emailService.js';
 import cron from 'node-cron';
-import nodemailer from 'nodemailer';
 import 'dotenv/config';
 import {WebSocketServer} from 'ws';
 import http from 'http';
-import appointmentTypes from '../frontend/src/data/appointmentTypes.json' assert { type: 'json' };
+import fs from 'fs';
+
+const jsonPath = path.join(process.cwd(), '../frontend/src/data/appointmentTypes.json');
+const appointmentTypes = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
 
 const app = express();
 const PORT = process.env.PORT || 3001;
