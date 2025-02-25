@@ -625,7 +625,7 @@ app.post('/api/tutoring-intake', async (req, res) => {
 });
 
 app.post('/api/clients', async (req, res) => {
-    const { full_name, email, phone, payment_method } = req.body; // Destructure the incoming data
+    const { full_name, email, phone, payment_method, category } = req.body; // Destructure the incoming data
 
     // Validate input data
     if (!full_name) {
@@ -635,8 +635,8 @@ app.post('/api/clients', async (req, res) => {
     try {
         // Insert the new client into the database
         const result = await pool.query(
-            'INSERT INTO clients (full_name, email, phone, payment_method) VALUES ($1, $2, $3, $4) RETURNING *',
-            [full_name, email || null, phone || null, payment_method || null] // Default email and phone to NULL if not provided
+            'INSERT INTO clients (full_name, email, phone, payment_method, category) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+            [full_name, email || null, phone || null, payment_method || null, category || null] // Default email and phone to NULL if not provided
         );
 
         res.status(201).json(result.rows[0]); // Respond with the created client
@@ -648,13 +648,66 @@ app.post('/api/clients', async (req, res) => {
 
 app.get('/api/clients', async (req, res) => {
     try {
-        const result = await pool.query('SELECT id, full_name, email, phone, payment_method FROM clients ORDER BY id DESC');
+        const result = await pool.query('SELECT id, full_name, email, phone, payment_method, category FROM clients ORDER BY id DESC');
         res.status(200).json(result.rows);
     } catch (error) {
         console.error('Error fetching clients:', error);
         res.status(500).json({ error: 'Failed to fetch clients' });
     }
 });
+
+app.patch('/api/clients/:id', async (req, res) => {
+    const { id } = req.params;
+    const updates = req.body;
+
+    let updateQuery = "UPDATE clients SET ";
+    const values = [];
+    let counter = 1;
+
+    for (const key in updates) {
+        updateQuery += `${key} = $${counter}, `;
+        values.push(updates[key]);
+        counter++;
+    }
+
+    updateQuery = updateQuery.slice(0, -2); // Remove trailing comma
+    updateQuery += ` WHERE id = $${counter} RETURNING *`;
+    values.push(id);
+
+    try {
+        const result = await pool.query(updateQuery, values);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Client not found' });
+        }
+        res.status(200).json(result.rows[0]);
+    } catch (error) {
+        console.error('Error updating client:', error);
+        res.status(500).json({ error: 'Failed to update client' });
+    }
+});
+
+
+
+app.delete('/api/clients/:id', async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const result = await pool.query(
+            'DELETE FROM clients WHERE id = $1 RETURNING *',
+            [id]
+        );
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Client not found' });
+        }
+
+        res.status(200).json({ message: 'Client deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting client:', error);
+        res.status(500).json({ error: 'Failed to delete client' });
+    }
+});
+
 
 app.post("/api/send-campaign", async (req, res) => {
     const { subject, message, sendTo } = req.body;
