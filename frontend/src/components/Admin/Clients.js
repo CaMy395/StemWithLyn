@@ -31,43 +31,46 @@ const Clients = () => {
     };
 
     const addOrUpdateClient = async () => {
-        if (!editClient) return;
-    
-        const updatedClient = {
+        const clientData = {
             full_name: newClient.full_name,
             email: newClient.email,
             phone: newClient.phone,
             payment_method: newClient.payment_method,
-            category: newClient.category || "StemwithLyn", // Default category if missing
+            category: newClient.category || "StemwithLyn", // Default category
         };
     
-        const url = `${process.env.REACT_APP_API_URL || "http://localhost:3001"}/api/clients/${editClient.id}`;
+        const isEditing = !!editClient; // Check if editing an existing client
+        const url = isEditing
+            ? `${process.env.REACT_APP_API_URL || "http://localhost:3001"}/api/clients/${editClient.id}`
+            : `${process.env.REACT_APP_API_URL || "http://localhost:3001"}/api/clients`;
     
-        console.log("Sending PATCH request to:", url);
-        console.log("Client Data Being Sent:", updatedClient);
-        console.log("API URL being used:", `${process.env.REACT_APP_API_URL || "http://localhost:3001"}/api/clients/${editClient.id}`);
-
+        const method = isEditing ? "PATCH" : "POST"; // Use PATCH for updates, POST for new clients
+    
+        console.log(`Sending ${method} request to:`, url);
+        console.log("Client Data Being Sent:", clientData);
+    
         try {
             const response = await fetch(url, {
-                method: "PATCH",
+                method: method,
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(updatedClient),
+                body: JSON.stringify(clientData),
             });
     
             if (!response.ok) {
                 const errorMessage = await response.text();
-                throw new Error(`Failed to update client: ${errorMessage}`);
+                throw new Error(`Failed to ${isEditing ? "update" : "add"} client: ${errorMessage}`);
             }
     
-            console.log("✅ Client updated successfully!");
-            fetchClients(); // Refresh client list
+            console.log(`✅ Client ${isEditing ? "updated" : "added"} successfully!`);
+            fetchClients(); // Refresh the client list
             setShowForm(false);
             setNewClient({ full_name: "", email: "", phone: "", payment_method: "", category: "StemwithLyn" });
             setEditClient(null);
         } catch (error) {
-            console.error("❌ Error updating client:", error);
+            console.error(`❌ Error ${isEditing ? "updating" : "adding"} client:`, error);
         }
     };
+    
     
     
 
