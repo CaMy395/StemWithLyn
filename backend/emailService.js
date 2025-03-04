@@ -188,13 +188,17 @@ const sendTutoringApptEmail = async ({ title, email, full_name, date, time, end_
         },
     });
 
-    // ✅ Check if "United Mentors" is in the appointment title
+    const adminEmail = "caitlyn.myland@gmail.com"; // ✅ Replace with your actual email
     const additionalRecipient = title.toLowerCase().includes("united mentors") ? "unitedmentorsllc@gmail.com" : null;
-    
+
+    // ✅ Ensure email is sent to the client, admin, and United Mentors (if applicable)
+    const recipients = [email, adminEmail];
+    if (additionalRecipient) recipients.push(additionalRecipient); // ✅ Add United Mentors if applicable
+
     const mailOptions = {
         from: process.env.EMAIL_USER,
-        to: additionalRecipient ? [email, additionalRecipient] : email, // ✅ Send to both if condition matches
-        subject: `Appointment Confirmation: ${title}`,
+        to: recipients, 
+        subject: `New Appointment Scheduled: ${title}`,
         html: `
             <p>Hello ${full_name},</p>
             <p>Your appointment has been scheduled. If you need to cancel or reschedule, please reply to this email.</p>
@@ -219,14 +223,13 @@ const sendTutoringApptEmail = async ({ title, email, full_name, date, time, end_
 
     try {
         await transporter.sendMail(mailOptions);
-        console.log(`Tutoring appointment email sent to ${email}${additionalRecipient ? ` and ${additionalRecipient}` : ''}`);
+        console.log(`📧 Appointment email sent to: ${recipients.join(", ")}`);
     } catch (error) {
-        console.error(`Error sending tutoring appointment email to ${email}:`, error.message);
+        console.error(`❌ Error sending appointment email:`, error.message);
     }
 };
 
 export { sendTutoringApptEmail };
-
 
 
 // Function specifically for appointment emails
@@ -242,9 +245,15 @@ const sendTutoringRescheduleEmail = async ({ title, email, full_name, old_date, 
         },
     });
 
+    const adminEmail = "caitlyn.myland@gmail.com"; // ✅ Replace with your email
+    const additionalRecipient = title.toLowerCase().includes("united mentors") ? "unitedmentorsllc@gmail.com" : null;
+
+    const recipients = [email, adminEmail]; // ✅ Send to client + admin
+    if (additionalRecipient) recipients.push(additionalRecipient); // ✅ Include United Mentors if applicable
+
     const mailOptions = {
         from: process.env.EMAIL_USER,
-        to: email,
+        to: recipients,
         subject: `Appointment Rescheduled: ${title}`,
         html: `
             <p>Hello ${full_name},</p>
@@ -261,13 +270,7 @@ const sendTutoringRescheduleEmail = async ({ title, email, full_name, old_date, 
                 <li><strong>Time:</strong> ${formatTime(new_time)} - ${end_time ? formatTime(end_time) : 'TBD'}</li>
                 <li><strong>Description:</strong> ${description || 'No additional details'}</li>
             </ul>
-            <p>If you have a virtual meeting or interview, please join here:</p>
-            <p>Caitlyn Myland is inviting you to a scheduled Zoom meeting.</p>
-            <p><strong>Topic:</strong> Stem with Lyn Meeting Room</p>
-            <p><strong>Join Zoom Meeting:</strong></p>
-            <p><a href="https://us06web.zoom.us/j/3697746091?pwd=YXkyaUhKM3AzKzJpcitUNWRCMjNOdz09">https://us06web.zoom.us/j/3697746091?pwd=YXkyaUhKM3AzKzJpcitUNWRCMjNOdz09</a></p>
-            <p><strong>Meeting ID:</strong> 369 774 6091</p>
-            <p><strong>Passcode:</strong> Lyn</p>
+            <p>If you have any questions, please contact us.</p>
             <p>Thank you!</p>
             <p>Best regards,<br>Your Team</p>
         `,
@@ -275,13 +278,14 @@ const sendTutoringRescheduleEmail = async ({ title, email, full_name, old_date, 
 
     try {
         await transporter.sendMail(mailOptions);
-        console.log(`Tutoring reschedule email sent to ${email}`);
+        console.log(`📧 Reschedule email sent to: ${recipients.join(", ")}`);
     } catch (error) {
-        console.error(`Error sending tutoring reschedule email to ${email}:`, error.message);
+        console.error(`❌ Error sending reschedule email:`, error.message);
     }
 };
 
 export { sendTutoringRescheduleEmail };
+
 
 const sendCancellationEmail = async ({ title, email, full_name, date, time, description }) => {
     const transporter = nodemailer.createTransport({
@@ -295,9 +299,15 @@ const sendCancellationEmail = async ({ title, email, full_name, date, time, desc
         },
     });
 
+    const adminEmail = "caitlyn.myland@gmail.com"; // ✅ Replace with your email
+    const additionalRecipient = title.toLowerCase().includes("united mentors") ? "unitedmentorsllc@gmail.com" : null;
+
+    const recipients = [email, adminEmail]; // ✅ Send to client + admin
+    if (additionalRecipient) recipients.push(additionalRecipient); // ✅ Include United Mentors if applicable
+
     const mailOptions = {
         from: process.env.EMAIL_USER,
-        to: email,
+        to: recipients,
         subject: `Appointment Cancellation: ${title}`,
         html: `
             <p>Hello ${full_name},</p>
@@ -317,13 +327,14 @@ const sendCancellationEmail = async ({ title, email, full_name, date, time, desc
 
     try {
         await transporter.sendMail(mailOptions);
-        console.log(`Cancellation email sent to ${email}`);
+        console.log(`📧 Cancellation email sent to: ${recipients.join(", ")}`);
     } catch (error) {
-        console.error(`Error sending cancellation email to ${email}:`, error.message);
+        console.error(`❌ Error sending cancellation email:`, error.message);
     }
 };
 
 export { sendCancellationEmail };
+
 
 //Task Alerts
 const sendTaskTextMessage = async ({ phone, carrier, task, due_date }) => {
