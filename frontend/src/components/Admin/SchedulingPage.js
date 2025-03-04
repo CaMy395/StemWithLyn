@@ -177,9 +177,7 @@ const SchedulingPage = () => {
             const timeSlot = `${blockDate}-${blockHour}`; // Ensure correct YYYY-MM-DD-HH format
             updatedBlockedTimes.push({ timeSlot, label: blockLabel, date: blockDate });
         }
-    
-        console.log("📤 Sending Blocked Times to API:", updatedBlockedTimes);
-    
+        
         try {
             const response = await axios.post(`${apiUrl}/api/schedule/block`, { blockedTimes: updatedBlockedTimes });
     
@@ -447,7 +445,7 @@ const SchedulingPage = () => {
                                         );
                                     })}
                                     </div>
-                                    {blocked && (<div className="blocked-indicator">Blocked: {blocked.label || "No reason provided"}</div>)}
+                                    {blocked && (<div className="blocked-indicator"> {blocked.label || "No reason provided"}</div>)}
                                 </td>
                             );
                         })}
