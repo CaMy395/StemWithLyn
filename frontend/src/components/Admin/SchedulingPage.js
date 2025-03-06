@@ -56,7 +56,6 @@ const SchedulingPage = () => {
     };
     
     
-    
     useEffect(() => {
         const fetchData = async () => {
             try {
@@ -75,7 +74,7 @@ const SchedulingPage = () => {
                 setClients(clientsRes.data);
     
                 // ✅ Fetch blocked times for the selected date
-                fetchBlockedTimes();
+                await fetchBlockedTimes(); // ✅ No need to add as a dependency
     
             } catch (error) {
                 console.error("❌ Error fetching data:", error);
@@ -83,7 +82,8 @@ const SchedulingPage = () => {
         };
     
         fetchData();
-    }, [apiUrl]); // ✅ Now runs every time `selectedDate` changes
+    }, [apiUrl]); // ✅ `fetchBlockedTimes` is called inside, so it's safe
+    
     
 
     const formatTime = (time) => {
@@ -169,34 +169,48 @@ const SchedulingPage = () => {
             return;
         }
     
-        let updatedBlockedTimes = [];
-    
-        // ✅ Generate time slots based on duration
-        for (let i = 0; i < blockDuration; i++) {
-            const blockHour = parseInt(blockStartTime, 10) + i;
-            const timeSlot = `${blockDate}-${blockHour}`; // Ensure correct YYYY-MM-DD-HH format
-            updatedBlockedTimes.push({ timeSlot, label: blockLabel, date: blockDate });
-        }
+        let [startHour, startMinutes] = blockStartTime.split(":").map(Number);
+        const startTime = `${startHour.toString().padStart(2, "0")}:${startMinutes.toString().padStart(2, "0")}`;
         
+        // Calculate end time based on duration
+        let endHour = startHour;
+        let endMinutes = startMinutes + Math.round(blockDuration * 60); 
+    
+        while (endMinutes >= 60) {
+            endMinutes -= 60;
+            endHour++;
+        }
+    
+        const endTime = `${endHour.toString().padStart(2, "0")}:${endMinutes.toString().padStart(2, "0")}`;
+    
+        const blockedTimeEntry = {
+            timeSlot: `${blockDate}-${startTime}`, // Store only the start time
+            label: `${blockLabel} (${blockDuration} hours)`, // Store duration in label
+            date: blockDate,
+            duration: blockDuration, // Explicitly store duration
+        };
+    
         try {
-            const response = await axios.post(`${apiUrl}/api/schedule/block`, { blockedTimes: updatedBlockedTimes });
+            const response = await axios.post(`${apiUrl}/api/schedule/block`, { blockedTimes: [blockedTimeEntry] });
     
             if (response.data.success) {
-                console.log("✅ Blocked times successfully posted:", response.data);
-                setBlockedTimes(prev => [...prev.filter(bt => bt.date !== blockDate), ...updatedBlockedTimes]);
+                console.log("✅ Blocked time successfully posted:", response.data);
+                setBlockedTimes(prev => [...prev.filter(bt => bt.date !== blockDate), blockedTimeEntry]);
             } else {
-                console.error("❌ Failed to post blocked times:", response.data);
+                console.error("❌ Failed to post blocked time:", response.data);
             }
     
-            setShowBlockModal(false); // ✅ Close modal after blocking
+            setShowBlockModal(false);
             setBlockDate('');
             setBlockStartTime('');
             setBlockDuration(1);
             setBlockLabel('');
         } catch (error) {
-            console.error("❌ Error posting blocked times:", error);
+            console.error("❌ Error posting blocked time:", error);
         }
     };
+    
+    
     
     
     const handleEditAppointment = (appointment) => {
@@ -380,39 +394,83 @@ const SchedulingPage = () => {
                                         );
                                     });
                                     
-                                    const blocked = blockedTimes.find(b => b.timeSlot.includes(`${dayString}-${hour}`));
-
+                                    const blockedEntriesAtTime = blockedTimes.map((b) => {
+                                        const [startHour, startMinutes] = b.timeSlot.split('-').pop().split(':').map(Number);
+                                    
+                                        // Extract duration from label (e.g., "test (1 hours)")
+                                        let durationMatch = b.label.match(/\((\d+(\.\d+)?)\s*hours?\)/i);
+                                        let duration = durationMatch ? parseFloat(durationMatch[1]) : 1; // Default to 1 hour if missing
+                                    
+                                        return {
+                                            ...b,
+                                            startHour,
+                                            startMinutes: startMinutes || 0, // Ensure minutes are set
+                                            duration, // Use extracted duration
+                                        };
+                                    }).filter(b => b.date === dayString && b.startHour === hour);
+                                    
+                                    
+                                
                                     return (
                                         <td
-                                            key={dayIndex}
-                                            style={{
-                                                position: 'relative',
-                                                height: '40px',
-                                                backgroundColor: blocked ? '#d3d3d3' : 'inherit',
-                                                cursor: 'pointer',
-                                            }}
-                                        >
-                                            {/* Render the red line for the current time */}
-                                            {currentDay === dayString && currentHour === hour && (
+                                        key={dayIndex}
+                                        className="time-slot"
+                                        style={{
+                                            position: 'relative',
+                                            verticalAlign: 'top',
+                                            height: '30px',
+                                        }}
+                                    >
+                                        {/* Render blocked slots exactly like appointments */}
+                                        {blockedEntriesAtTime.map((blocked, index) => {
+                                            const [startHour, startMinutes] = blocked.timeSlot.split('-').pop().split(':').map(Number);
+                                            const blockTop = (startMinutes / 60) * 100; // Align inside the hour
+                                            const blockHeight = blocked.duration * 100; // Each hour = 100% of the row height
+                                    
+                                            return (
                                                 <div
+                                                    key={index}
+                                                    className="blocked-indicator"
                                                     style={{
                                                         position: 'absolute',
-                                                        top: `${(currentMinutes / 60) * 100}%`,
+                                                        top: `${blockTop}%`, 
                                                         left: 0,
                                                         right: 0,
-                                                        height: '2px',
-                                                        backgroundColor: 'red',
-                                                        zIndex: 10,
+                                                        height: `${blockHeight}%`, 
+                                                        backgroundColor: '#d3d3d3',
+                                                        textAlign: 'center',
+                                                        fontWeight: 'bold',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
                                                     }}
-                                                />
-                                            )}
-                                            <div>
+                                                >
+                                                    {blocked.label || "Blocked"}
+                                                </div>
+                                            );
+                                        })}
+
+                                        {/* Render the red line for the current time */}
+                                        {currentDay === dayString && currentHour === hour && (
+                                            <div
+                                                style={{
+                                                    position: 'absolute',
+                                                    top: `${(currentMinutes / 60) * 100}%`,
+                                                    left: 0,
+                                                    right: 0,
+                                                    height: '2px',
+                                                    backgroundColor: 'red',
+                                                    zIndex: 10,
+                                                }}
+                                            />
+                                        )}
+                                        <div>
+                                            
                                         {/* Render appointments */}
                                         {appointmentsAtTime.map((appointment, index) => {
                                         const startTime = new Date(`${appointment.date}T${appointment.time}`);
                                         const endTime = new Date(`${appointment.date}T${appointment.end_time}`);
                                         const durationInMinutes = (endTime - startTime) / (1000 * 60); // Duration in minutes
-                                        //const startHour = startTime.getHours();
                                         const startMinutes = startTime.getMinutes();
                                         const topPercentage = (startMinutes / 60) * 100; // Calculate top offset
 
@@ -437,26 +495,23 @@ const SchedulingPage = () => {
                                                         onClick={(e) => e.stopPropagation()} // Prevents the time popup
                                                         onChange={() => togglePaidStatus('appointment', appointment.id, !appointment.paid)}
                                                     />
-
                                                         Completed
                                                     </label>
                                                 </div>
                                             </div>
                                         );
                                     })}
-                                    </div>
-                                    {blocked && (<div className="blocked-indicator"> {blocked.label || "No reason provided"}</div>)}
-                                </td>
-                            );
-                        })}
-                    </tr>
-                ))}
-            </tbody>
-        </table>
-    </div>
+                                </div>  
+                           </td>
+                        );
+                    })}
+                </tr>
+            ))}
+        </tbody>
+    </table>
+</div>
 );
-    };
-    console.log("👥 Clients in Dropdown:", clients);
+};
 
     return (
         <div>

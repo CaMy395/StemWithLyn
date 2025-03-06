@@ -846,11 +846,16 @@ body.hide-menu .navigation-menu {
   color: #dda0dd;
   font-weight: bold;
   text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  top: 0;
+  width: 100%;
+  
 }
+
 
 td {
   transition: background-color 0.3s;
