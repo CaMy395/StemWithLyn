@@ -54,8 +54,7 @@ const SchedulingPage = () => {
             console.error("❌ Error fetching blocked times:", error);
         }
     };
-    
-    
+      
     useEffect(() => {
         const fetchData = async () => {
             try {
@@ -85,7 +84,6 @@ const SchedulingPage = () => {
     }, [apiUrl]); // ✅ `fetchBlockedTimes` is called inside, so it's safe
     
     
-
     const formatTime = (time) => {
         // Ensure time is always in HH format (e.g., "7" → "07:00", "19" → "19:00")
         let formattedTime = time.length === 1 ? `0${time}:00` : `${time}:00`;
@@ -101,7 +99,6 @@ const SchedulingPage = () => {
             hour12: true,
         }).format(date);
     };
-    
 
     const handleDateClick = (date) => setSelectedDate(date);
 
@@ -210,9 +207,6 @@ const SchedulingPage = () => {
         }
     };
     
-    
-    
-    
     const handleEditAppointment = (appointment) => {
         setEditingAppointment(appointment);
         setNewAppointment({
@@ -256,7 +250,6 @@ const SchedulingPage = () => {
         }
     };
     
-
     const getTileContent = ({ date }) => {
         const formatDate = (d) => new Date(d).toISOString().split('T')[0];
         const calendarDate = formatDate(date);
@@ -409,8 +402,6 @@ const SchedulingPage = () => {
                                         };
                                     }).filter(b => b.date === dayString && b.startHour === hour);
                                     
-                                    
-                                
                                     return (
                                         <td
                                         key={dayIndex}
@@ -529,14 +520,14 @@ const SchedulingPage = () => {
             )}
 
             <h3>Selected Date: {selectedDate.toDateString()}</h3>
-                <div className="appointment-container">
+                <div className="week-view">
                     {appointments
                         .filter((appointment) => {
                             const formatDate = (d) => new Date(d).toISOString().split('T')[0];
                             return formatDate(appointment.date) === selectedDate.toISOString().split('T')[0];
                         })
                         .map((appointment) => (
-                            <div key={appointment.id} className="gig-card">
+                            <div key={appointment.id} className="appointment-card">
                                 <strong>Title:</strong> {appointment.title} <br />
                                 <strong>Client:</strong> {clients?.length > 0 && appointment.client_id 
                                 ? clients.find(client => client.id === appointment.client_id)?.full_name || 'N/A' 
@@ -559,7 +550,7 @@ const SchedulingPage = () => {
                             return blockedDate === selectedDateFormatted;
                         })
                         .map((blocked) => (
-                            <div key={blocked.timeSlot} className="gig-card blocked">
+                            <div key={blocked.timeSlot} className="appointment-card">
                                 <strong>Blocked Time:</strong> {formatTime(blocked.timeSlot.split('-').pop())} <br />
                                 <strong>Reason:</strong> {blocked.label} <br />
                                 <button onClick={() => handleDeleteBlockedTime(blocked)}>Delete</button>

@@ -38,8 +38,8 @@
 }
 
 /* Apply consistent styling to all page headers */
-h1, h2 {
-  text-align: center;
+h1, h2, h3 {
+  text-align: center !important;
   color: #dda0dd !important; /* The purple color from Clients page */
   font-size: 2rem;
 }
@@ -811,6 +811,18 @@ body.hide-menu .navigation-menu {
 .appointment {
   background-color: #ffd0d0;
   color: #b30000;
+}
+
+.appointment-card {
+  position: relative;
+  background-color: #ddd;
+  border: 1px solid #4d4d4d;
+  border-radius: 10px;
+  margin: 10px; /* This margin affects the space between cards */
+  padding: 10px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  line-height: 1.25; /* Reduce line spacing within each card */
+  width: 350px; /* Set a fixed width for smaller cards */
 }
 
 .button-container {
