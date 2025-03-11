@@ -188,7 +188,7 @@ const sendTutoringApptEmail = async ({ title, email, full_name, date, time, end_
         },
     });
 
-    const adminEmail = "caitlyn.myland@gmail.com"; // ✅ Replace with your actual email
+    const adminEmail = "stemwithlyn@gmail.com"; // ✅ Replace with your actual email
     const additionalRecipient = title.toLowerCase().includes("united mentors") ? "unitedmentorsllc@gmail.com" : null;
 
     // ✅ Ensure email is sent to the client, admin, and United Mentors (if applicable)
@@ -245,7 +245,7 @@ const sendTutoringRescheduleEmail = async ({ title, email, full_name, old_date, 
         },
     });
 
-    const adminEmail = "caitlyn.myland@gmail.com"; // ✅ Replace with your email
+    const adminEmail = "stemwithlyn@gmail.com"; // ✅ Replace with your email
     const additionalRecipient = title.toLowerCase().includes("united mentors") ? "unitedmentorsllc@gmail.com" : null;
 
     const recipients = [email, adminEmail]; // ✅ Send to client + admin
@@ -299,7 +299,7 @@ const sendCancellationEmail = async ({ title, email, full_name, date, time, desc
         },
     });
 
-    const adminEmail = "caitlyn.myland@gmail.com"; // ✅ Replace with your email
+    const adminEmail = "stemwithlyn@gmail.com"; // ✅ Replace with your email
     const additionalRecipient = title.toLowerCase().includes("united mentors") ? "unitedmentorsllc@gmail.com" : null;
 
     const recipients = [email, adminEmail]; // ✅ Send to client + admin
@@ -426,6 +426,53 @@ const sendTextMessage = async ({ phone, carrier, message }) => {
 };
 export { sendTextMessage };
 
+const sendMentorSessionLogEmail = async (formData) => {
+    const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS,
+        },
+        tls: {
+            rejectUnauthorized: false,
+        },
+    });
+
+    // ✅ Ensure the email is always sent to both the form completer and United Mentors
+    const recipients = [formData.email, "unitedmentorsllc@gmail.com"];
+
+    const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: recipients, // ✅ Always sends to the mentor and United Mentors
+        subject: "United Mentors Session Log Submitted",
+        html: `
+            <h3>New Mentor Session Log</h3>
+            <p><strong>Mentor Name:</strong> ${formData.mentorName}</p>
+            <p><strong>Student Name:</strong> ${formData.studentName}</p>
+            <p><strong>Date:</strong> ${formData.date}</p>
+            <p><strong>Time:</strong> ${formData.time}</p>
+            <p><strong>Duration:</strong> ${formData.duration}</p>
+            <p><strong>Skill Covered:</strong> ${formData.skill.join(", ")}</p>
+            <p><strong>Behavior:</strong> ${formData.behavior}</p>
+            <p><strong>Communication With:</strong> ${formData.communication}</p>
+            <p><strong>Details:</strong> ${formData.details}</p>
+            <p><strong>Incident Report:</strong> ${formData.incident}</p>
+            <p><strong>Progress:</strong> ${formData.progress}</p>
+            <p><strong>Type:</strong> ${formData.type}</p>
+            <p><strong>Session Details:</strong> ${formData.sessionDetails}</p>
+            <p><strong>Additional Notes:</strong> ${formData.additionalNotes}</p>
+        `,
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+        console.log(`📧 Session log email sent to: ${recipients.join(", ")}`);
+    } catch (error) {
+        console.error(`❌ Error sending session log email:`, error.message);
+    }
+};
+
+export { sendMentorSessionLogEmail };
 
 
 // Function to Send Email Campaign

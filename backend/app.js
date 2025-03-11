@@ -10,7 +10,7 @@ import bcrypt from 'bcrypt';
 import pool from './db.js'; // Import the centralized pool connection
 import axios from "axios"; // ✅ Import axios
 import {
-    sendRegistrationEmail,sendResetEmail, sendTutoringIntakeEmail, sendTutoringApptEmail, sendTutoringRescheduleEmail,sendCancellationEmail, sendTextMessage, sendTaskTextMessage,  sendEmailCampaign
+    sendRegistrationEmail,sendResetEmail, sendTutoringIntakeEmail, sendTutoringApptEmail, sendTutoringRescheduleEmail,sendCancellationEmail, sendTextMessage, sendTaskTextMessage,  sendMentorSessionLogEmail, sendEmailCampaign
 } from './emailService.js';
 import cron from 'node-cron';
 import 'dotenv/config';
@@ -686,8 +686,6 @@ app.patch('/api/clients/:id', async (req, res) => {
     }
 });
 
-
-
 app.delete('/api/clients/:id', async (req, res) => {
     const { id } = req.params;
 
@@ -803,7 +801,6 @@ app.post('/api/create-payment-link', async (req, res) => {
         res.status(500).json({ error: 'Failed to create payment link' });
     }
 });
-
 
 app.post('/appointments', async (req, res) => {
     try {
@@ -1337,6 +1334,25 @@ app.delete("/availability/:id", async (req, res) => {
     }
 });
 
+// API endpoint to handle form submissions
+app.post('/mentors-log', async (req, res) => {
+    try {
+        const formData = req.body;
+
+        // Validate required fields
+        if (!formData.email || !formData.mentorName || !formData.studentName) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        // Send email notification
+        await sendMentorSessionLogEmail(formData);
+
+        res.status(200).json({ message: "Session log submitted and email sent." });
+    } catch (error) {
+        console.error("❌ Error handling mentor session log:", error);
+        res.status(500).json({ error: "Failed to submit session log." });
+    }
+});
 
 
 // Serve static files from the React app

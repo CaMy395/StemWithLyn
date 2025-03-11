@@ -47,6 +47,12 @@ const AdminDashboard = () => {
                         >
                             Client List
                         </button>
+                        <button
+                            className="action-button"
+                            onClick={() => navigate('/admin/mentors-log')}
+                        >
+                            UM Session Log
+                        </button>
                     </div>
                 </section>
             </main>

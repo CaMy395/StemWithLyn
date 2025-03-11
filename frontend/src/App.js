@@ -18,6 +18,7 @@ import Clients from './components/Admin/Clients';
 import SchedulingPage from './components/Admin/SchedulingPage';
 import AdminAvailabilityPage from './components/Admin/AdminAvailabilityPage';
 import AdminDashboard from './components/Admin/AdminDashboard';
+import MentorSessionLog from './components/Admin/MentorSessionLog';
 
 import WebSocketProvider from './WebSocketProvider';
 import './App.css';
@@ -166,6 +167,8 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
                 <Route path="/admin/clients" element={userRole === 'admin' ? <Clients /> : <Navigate to="/login" />} />
                 <Route path="/admin/intake-forms" element={userRole === 'admin' ? <AdminIntakeForms />: <Navigate to="/login" />} />
                 <Route path="/admin/mytasks" element={userRole === 'admin' ? <MyTasks /> : <Navigate to="/login" />} />
+                <Route path="/admin/mentors-log" element={userRole === 'admin' ? <MentorSessionLog /> : <Navigate to="/login" />} />
+
             </Routes>
         </div>
     );
