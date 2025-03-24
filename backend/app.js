@@ -10,7 +10,7 @@ import bcrypt from 'bcrypt';
 import pool from './db.js'; // Import the centralized pool connection
 import axios from "axios"; // ✅ Import axios
 import {
-    sendRegistrationEmail,sendResetEmail, sendTutoringIntakeEmail, sendTutoringApptEmail, sendTutoringRescheduleEmail,sendCancellationEmail, sendTextMessage, sendTaskTextMessage,  sendMentorSessionLogEmail, sendEmailCampaign
+    sendAppointmentReminderEmail , sendRegistrationEmail,sendResetEmail, sendTutoringIntakeEmail, sendTutoringApptEmail, sendTutoringRescheduleEmail,sendCancellationEmail, sendTextMessage, sendTaskTextMessage,  sendMentorSessionLogEmail, sendEmailCampaign
 } from './emailService.js';
 import cron from 'node-cron';
 import 'dotenv/config';
@@ -324,6 +324,39 @@ async function checkAndSendTaskReminders() {
 cron.schedule('0 9 * * *', () => {
     console.log('Checking and sending task reminders...');
     checkAndSendTaskReminders();
+}, {
+    timezone: "America/New_York"
+});
+
+cron.schedule('0 8 * * *', async () => {
+    console.log('⏰ Running daily appointment reminder check...');
+
+    const tomorrow = moment().tz('America/New_York').add(1, 'day').format('YYYY-MM-DD');
+
+    try {
+        const result = await pool.query(`
+            SELECT a.*, c.full_name, c.email
+            FROM appointments a
+            JOIN clients c ON a.client_id = c.id
+            WHERE a.date = $1
+        `, [tomorrow]);
+
+        for (const appt of result.rows) {
+            if (appt.email) {
+                await sendAppointmentReminderEmail({
+                    email: appt.email,
+                    full_name: appt.full_name,
+                    date: appt.date,
+                    time: appt.time,
+                    title: appt.title
+                });
+            }
+        }
+
+        console.log(`✅ Sent ${result.rows.length} appointment reminders for ${tomorrow}`);
+    } catch (error) {
+        console.error('❌ Error sending appointment reminders:', error.message);
+    }
 }, {
     timezone: "America/New_York"
 });

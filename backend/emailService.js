@@ -209,7 +209,7 @@ const sendTutoringApptEmail = async ({ title, email, full_name, date, time, end_
                 <li><strong>Time:</strong> ${formatTime(time)} - ${end_time ? formatTime(end_time) : 'TBD'}</li>
                 <li><strong>Description:</strong> ${description || 'No additional details'}</li>
             </ul>
-            <p>If you have a virtual meeting or interview, please join here:</p>
+            <p>If you have a virtual meeting, please join here:</p>
             <p>Caitlyn Myland is inviting you to a scheduled Zoom meeting.</p>
             <p><strong>Topic:</strong> Stem with Lyn Meeting Room</p>
             <p><strong>Join Zoom Meeting:</strong></p>
@@ -270,7 +270,13 @@ const sendTutoringRescheduleEmail = async ({ title, email, full_name, old_date, 
                 <li><strong>Time:</strong> ${formatTime(new_time)} - ${end_time ? formatTime(end_time) : 'TBD'}</li>
                 <li><strong>Description:</strong> ${description || 'No additional details'}</li>
             </ul>
-            <p>If you have any questions, please contact us.</p>
+            <p>If you have a virtual meeting, please join here:</p>
+            <p>Caitlyn Myland is inviting you to a scheduled Zoom meeting.</p>
+            <p><strong>Topic:</strong> Stem with Lyn Meeting Room</p>
+            <p><strong>Join Zoom Meeting:</strong></p>
+            <p><a href="https://us06web.zoom.us/j/3697746091?pwd=YXkyaUhKM3AzKzJpcitUNWRCMjNOdz09">https://us06web.zoom.us/j/3697746091?pwd=YXkyaUhKM3AzKzJpcitUNWRCMjNOdz09</a></p>
+            <p><strong>Meeting ID:</strong> 369 774 6091</p>
+            <p><strong>Passcode:</strong> Lyn</p>
             <p>Thank you!</p>
             <p>Best regards,<br>Your Team</p>
         `,
@@ -511,3 +517,46 @@ const sendEmailCampaign = async (clients, subject, message) => {
 };
 
 export { sendEmailCampaign };
+
+const sendAppointmentReminderEmail = async ({ email, full_name, date, time, title }) => {
+    const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS,
+        },
+        tls: {
+            rejectUnauthorized: false,
+        },
+    });
+
+    const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: email,
+        subject: `Reminder: Your Appointment is Tomorrow`,
+        html: `
+            <p>Hello ${full_name},</p>
+            <p>This is a friendly reminder that you have an upcoming appointment scheduled for tomorrow.</p>
+            <ul>
+                <li><strong>Title:</strong> ${title}</li>
+                <li><strong>Date:</strong> ${date}</li>
+                <li><strong>Time:</strong> ${formatTime(time)}</li>
+            </ul>
+            <p>If you have any questions or need to reschedule, feel free to reply to this email.</p>
+            <p><strong>Join Zoom Meeting:</strong></p>
+            <p><a href="https://us06web.zoom.us/j/3697746091?pwd=YXkyaUhKM3AzKzJpcitUNWRCMjNOdz09">https://us06web.zoom.us/j/3697746091?pwd=YXkyaUhKM3AzKzJpcitUNWRCMjNOdz09</a></p>
+            <p><strong>Meeting ID:</strong> 369 774 6091</p>
+            <p><strong>Passcode:</strong> Lyn</p>
+            <p>Thank you!</p>
+        `,
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+        console.log(`📧 Reminder email sent to: ${email}`);
+    } catch (error) {
+        console.error(`❌ Error sending reminder email:`, error.message);
+    }
+};
+
+export { sendAppointmentReminderEmail };
