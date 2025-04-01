@@ -12,5 +12,6 @@
     { "title": "Third Party Organization (1 hour)", "category": "Tutoring"  },
     { "title": "Third Party Organization (In-Person) (1 hour)", "category": "Tutoring"  },
     { "title": "United Mentors (1 hour)", "category": "Tutoring"  },
-    { "title": "United Mentors (In-Person) (1 hour)", "category": "Tutoring"  }
+    { "title": "United Mentors (In-Person) (1 hour)", "category": "Tutoring"  },
+    { "title": "Developer Consultation (30 min)", "category": "Technology"  }
 ]

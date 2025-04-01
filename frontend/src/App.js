@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, useLocation, Routes, Route, Link, Navigate } from 'react-router-dom';
 //Public Pages
 import TutoringIntake from './components/Public/TutoringIntake';
+import TechIntake from './components/Public/TechIntake';
 import Register from './components/Public/Register';
 import Login from './components/Public/Login';
 import ForgotPassword from './components/Public/ForgotPassword';
@@ -158,6 +159,7 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
                 <Route path="/forgot-password" element={<ForgotPassword />} />
                 <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/tutoring-intake" element={<TutoringIntake />} />
+                <Route path="/tech-engineering" element={<TechIntake />} />
                 <Route path="/client-scheduling" element={<ClientSchedulingPage />} />
                 <Route path="/payment" element={<Payment />} />
                 <Route path="/admin" element={userRole === 'admin' ? <AdminDashboard /> : <Navigate to="/login" />} />

@@ -102,63 +102,80 @@ const SchedulingPage = () => {
 
     const handleDateClick = (date) => setSelectedDate(date);
 
-    const handleAddOrUpdateAppointment = (e) => {
+    const handleAddOrUpdateAppointment = async (e) => {
         e.preventDefault();
-        
+    
         const clientId = parseInt(newAppointment.client, 10);
-        const selectedClient = clients.find(c => c.id === clientId) || {}; // ✅ Ensures `selectedClient` is always an object
-
+        const selectedClient = clients.find(c => c.id === clientId) || {};
     
         if (!selectedClient) {
             alert("❌ Error: Selected client not found!");
             return;
         }
     
-
-        const appointmentData = {
-            title: newAppointment.title,
+        const {
+            title,
+            date,
+            time,
+            endTime,
+            description,
+            recurrence = '',      // 'daily', 'weekly', 'biweekly', 'monthly'
+            occurrences = 1       // number of sessions to repeat
+        } = newAppointment;
+    
+        const baseAppointment = {
+            title,
             client_id: clientId,
-            client_name: selectedClient ? selectedClient.full_name : "Unknown",  // ✅ Ensure client_name is included
-            client_email: selectedClient ? selectedClient.email : "Unknown",    // ✅ Ensure client_email is included
-            date: newAppointment.date,
-            time: newAppointment.time,
-            end_time: newAppointment.endTime,
-            description: newAppointment.description,
+            client_name: selectedClient.full_name || 'Unknown',
+            client_email: selectedClient.email || 'Unknown',
+            time,
+            end_time: endTime,
+            description,
             isAdmin: true,
         };
-        
     
-        console.log("📤 PATCH Request Data:", appointmentData); // ✅ Debug log
+        const appointmentsToCreate = [];
+        let startDate = new Date(date);
     
-        if (editingAppointment) {
-            // ✅ PATCH request for updates
-            axios.patch(`${apiUrl}/appointments/${editingAppointment.id}`, appointmentData)
-                .then((res) => {
-                    alert('✅ Appointment updated successfully!');
-                    setAppointments((prev) =>
-                        prev.map((appt) => (appt.id === editingAppointment.id ? res.data : appt))
-                    );
-                    setEditingAppointment(null);
-                    setNewAppointment({ title: '', client: '', date: '', time: '', endTime: '', description: '' });
-                })
-                .catch((err) => {
-                    console.error("❌ Error updating appointment:", err);
-                    alert('Error updating appointment.');
-                });
-        } else {
-            // ✅ POST request for new appointments
-            axios.post(`${apiUrl}/appointments`, appointmentData)
-                .then((res) => {
-                    alert('✅ Appointment added successfully!');
-                    setAppointments([...appointments, res.data]);
-                    setNewAppointment({ title: '', client: '', date: '', time: '', endTime: '', description: '' });
-                })
-                .catch((err) => {
-                    console.error("❌ Error adding appointment:", err);
-                    alert('Error adding appointment.');
-                });
+        for (let i = 0; i < occurrences; i++) {
+            const recurrenceDate = new Date(startDate);
+    
+            switch (recurrence) {
+                case 'daily':
+                    recurrenceDate.setDate(startDate.getDate() + i);
+                    break;
+                case 'weekly':
+                    recurrenceDate.setDate(startDate.getDate() + i * 7);
+                    break;
+                case 'biweekly':
+                    recurrenceDate.setDate(startDate.getDate() + i * 14);
+                    break;
+                case 'monthly':
+                    recurrenceDate.setMonth(startDate.getMonth() + i);
+                    break;
+                default:
+                    if (i > 0) continue; // only run once for non-repeating
+            }
+    
+            const formattedDate = recurrenceDate.toISOString().split('T')[0];
+            appointmentsToCreate.push({ ...baseAppointment, date: formattedDate });
+        }
+    
+        try {
+            const promises = appointmentsToCreate.map((appt) =>
+                axios.post(`${apiUrl}/appointments`, appt)
+            );
+            const responses = await Promise.all(promises);
+    
+            alert(`✅ ${responses.length} appointment(s) added successfully!`);
+            setAppointments([...appointments, ...responses.map(r => r.data.appointment || r.data)]);
+            setNewAppointment({ title: '', client: '', date: '', time: '', endTime: '', description: '' });
+        } catch (err) {
+            console.error("❌ Error adding recurring appointment(s):", err);
+            alert('Error adding appointments.');
         }
     };
+    
     
     const handleBlockTime = async () => {
         if (!blockDate || !blockStartTime || !blockDuration || !blockLabel) {
@@ -666,6 +683,29 @@ const SchedulingPage = () => {
                         onChange={(e) => setNewAppointment({ ...newAppointment, endTime: e.target.value })}
                     />
                 </label>
+                <label>
+  Repeat:
+  <select
+    value={newAppointment.recurrence || ''}
+    onChange={(e) => setNewAppointment({ ...newAppointment, recurrence: e.target.value })}
+  >
+    <option value="">None</option>
+    <option value="daily">Daily</option>
+    <option value="weekly">Weekly</option>
+    <option value="biweekly">Biweekly</option>
+    <option value="monthly">Monthly</option>
+  </select>
+</label>
+<label>
+  Occurrences:
+  <input
+    type="number"
+    min="1"
+    value={newAppointment.occurrences || 1}
+    onChange={(e) => setNewAppointment({ ...newAppointment, occurrences: e.target.value })}
+  />
+</label>
+
                 <label>
                     Description:
                     <textarea

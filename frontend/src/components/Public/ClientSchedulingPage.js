@@ -31,6 +31,9 @@ const ClientSchedulingPage = () => {
         if (email) setClientEmail(email);
         if (phone) setClientPhone(phone);
         if (payment) setPaymentMethod(payment);
+        const apptType = searchParams.get("appointmentType");
+        if (apptType) setSelectedAppointmentType(apptType);
+
     }, [searchParams]); 
       
 

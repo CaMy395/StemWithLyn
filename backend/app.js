@@ -657,6 +657,56 @@ app.post('/api/tutoring-intake', async (req, res) => {
     }
 });
 
+app.post('/api/tech-intake', async (req, res) => {
+    const {
+        fullName,
+        email,
+        phone,
+        helpType,
+        platform,
+        experienceLevel,
+        deadline,
+        paymentMethod,
+        additionalDetails,
+        haveBooked
+    } = req.body;
+
+    const insertQuery = `
+        INSERT INTO tech_intake_forms (
+            full_name,
+            email,
+            phone,
+            help_type,
+            platform,
+            experience_level,
+            deadline,
+            payment_method,
+            additional_details,
+            have_booked
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `;
+
+    try {
+        await pool.query(insertQuery, [
+            fullName,
+            email,
+            phone,
+            helpType,
+            platform,
+            experienceLevel,
+            deadline || null,
+            paymentMethod,
+            additionalDetails || null,
+            haveBooked === 'yes'
+        ]);
+
+        res.status(201).json({ message: 'Tech intake form submitted successfully' });
+    } catch (error) {
+        console.error('❌ Error saving tech intake form:', error);
+        res.status(500).json({ error: 'Failed to save tech intake form' });
+    }
+});
+
 app.post('/api/clients', async (req, res) => {
     const { full_name, email, phone, payment_method, category } = req.body; // Destructure the incoming data
 
@@ -839,186 +889,173 @@ app.post('/appointments', async (req, res) => {
     try {
         console.log("✅ Received appointment request:", req.body);
 
-        // Extract values from request body
-        const { title, client_id, client_name, client_email, date, time, end_time, description } = req.body;
+        const { title, client_id, client_name, client_email, date, time, end_time, description, recurrence = '', occurrences = 1 } = req.body;
 
         let finalClientName = client_name;
         let finalClientEmail = client_email;
 
-        // ✅ If `client_id` exists but `client_name` and `client_email` are missing, fetch them from DB
         if (client_id && (!client_name || !client_email)) {
-            const clientResult = await pool.query(
-                `SELECT full_name, email FROM clients WHERE id = $1`, [client_id]
-            );
-        
+            const clientResult = await pool.query(`SELECT full_name, email FROM clients WHERE id = $1`, [client_id]);
             if (clientResult.rowCount > 0) {
                 finalClientName = clientResult.rows[0].full_name;
                 finalClientEmail = clientResult.rows[0].email;
             }
         }
-        
-        // ✅ Validate Required Fields
+
         if (!title || !finalClientName || !finalClientEmail || !date || !time) {
             console.error("❌ Missing required appointment details:", { title, client_name: finalClientName, client_email: finalClientEmail, date, time });
             return res.status(400).json({ error: "Missing required appointment details." });
         }
-        
-        let clientResult = await pool.query(
-            `SELECT id, payment_method FROM clients WHERE email = $1`,
-            [client_email]
-        );
 
-        let finalClientId = client_id; // ✅ Use `finalClientId` instead of redefining `client_id`
-        let payment_method = req.body.payment_method; // ✅ Use client-selected method if provided
+        let clientResult = await pool.query(`SELECT id, payment_method FROM clients WHERE email = $1`, [client_email]);
+        let finalClientId = client_id;
+        let payment_method = req.body.payment_method;
 
         if (clientResult.rowCount === 0) {
             console.log("🆕 New client detected:", finalClientName);
-            const finalClientPhone = req.body.client_phone || ""; // ✅ Default to empty string if undefined
-
+            const finalClientPhone = req.body.client_phone || "";
             const newClient = await pool.query(
                 `INSERT INTO clients (full_name, email, phone, payment_method) VALUES ($1, $2, $3, $4) RETURNING id`,
                 [finalClientName, finalClientEmail, finalClientPhone, payment_method]
             );
-
-            finalClientId = newClient.rows[0].id; // ✅ Now works since `finalClientId` is `let`
+            finalClientId = newClient.rows[0].id;
         } else {
             console.log("✅ Existing client found:", clientResult.rows[0]);
-            finalClientId = clientResult.rows[0].id; // ✅ Now works since `finalClientId` is `let`
+            finalClientId = clientResult.rows[0].id;
         }
-        
-        // ✅ Define `isAdmin` based on request data (if applicable)
-        const isAdmin = req.body.isAdmin || false; // ✅ Use `isAdmin` from request body
-        
-        // ✅ Ensure `time` format matches PostgreSQL `TIME` type (`HH:MM:SS`)
+
+        const isAdmin = req.body.isAdmin || false;
         const formattedTime = time.length === 5 ? `${time}:00` : time;
         const formattedEndTime = end_time.length === 5 ? `${end_time}:00` : end_time;
 
-        // ✅ Convert UTC date to local date
-        const appointmentDate = new Date(date + "T12:00:00"); // ✅ Ensures appointmentDate is defined
+        const appointmentDate = new Date(date + "T12:00:00");
 
-                // ✅ Skip availability and duplicate checks for admins
-                if (!isAdmin) {  
-                    console.log("🔍 Checking availability and blocked times for non-admin booking...");
-                
-                    // ✅ Check if the slot is blocked
-                    const blockedCheck = await pool.query(
-                        `SELECT * FROM schedule_blocks WHERE date = $1 AND time_slot = $2`,
-                        [date, `${formattedTime.split(":")[0]}`] // ✅ Check blocked times using `YYYY-MM-DD-HH`
-                    );
-                
-                    if (blockedCheck.rowCount > 0) {
-                        console.error("❌ This time slot is blocked and cannot be booked:", title, date, formattedTime);
-                        return res.status(400).json({ error: "This time slot is blocked and cannot be booked." });
-                    }
-                
-                    // ✅ Check if the slot is already booked
-                    const existingAppointment = await pool.query(
-                        `SELECT * FROM appointments WHERE date = $1 AND time = $2`,
-                        [date, formattedTime]
-                    );
-                
-                    if (existingAppointment.rowCount > 0) {
-                        console.error("❌ This time slot is already booked:", title, date, formattedTime);
-                        return res.status(400).json({ error: "This time slot is already booked." });
-                    }     
-                    
-                    const appointmentWeekday = appointmentDate.toLocaleDateString("en-US", {
-                        weekday: "long",
-                        timeZone: "America/New_York"
-                    }).trim();
-                
-               
-                    const availabilityCheck = await pool.query(
-                        `SELECT * FROM weekly_availability 
-                        WHERE weekday = $1 
-                        AND appointment_type ILIKE $2 
-                        AND start_time = $3`,
-                        [appointmentWeekday, `%${title}%`, formattedTime]
-                    );
-                
-               
-                    if (availabilityCheck.rowCount === 0) {
-                        console.error("❌ No available slot found for", title, date, formattedTime);
-                        return res.status(400).json({ error: "The selected time slot is not available for this appointment type." });
-                    }
-                
-                    console.log("✅ Slot is available! Proceeding with booking...");
-                } else {
-                    console.log("🔓 Admin scheduling — bypassing availability check.");
-                }
-        
-
-    
-        // Extract price from title (e.g., "Virtual Tutoring (1 hour, $50)")
         function extractPriceFromTitle(title) {
-            const match = title.match(/\$(\d+(\.\d{1,2})?)/); // Match dollar amount in title
-            return match ? parseFloat(match[1]) : 0; // Default to $0 if no price is found
+            const match = title.match(/\$(\d+(\.\d{1,2})?)/);
+            return match ? parseFloat(match[1]) : 0;
         }
 
-        const basePrice = extractPriceFromTitle(title); // Get price from title
-        
-        const insertAppointment = await pool.query(
-            `INSERT INTO appointments (title, client_id, date, time, end_time, description, price)
-             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-            [title, finalClientId, date, formattedTime, formattedEndTime, description, basePrice]
-        );
-        
-        const newAppointment = insertAppointment.rows[0];
-        console.log("🎉 Appointment successfully created:", newAppointment);        
-        
-        // ✅ Determine payment link based on payment method
-        let paymentUrl = null;
+        const basePrice = extractPriceFromTitle(title);
 
+        // ⏰ Recurrence support
+        const recurrenceDates = [];
+        const startDate = new Date(date);
+
+        for (let i = 0; i < occurrences; i++) {
+            const recurDate = new Date(startDate);
+            switch (recurrence) {
+                case 'daily':
+                    recurDate.setDate(startDate.getDate() + i);
+                    break;
+                case 'weekly':
+                    recurDate.setDate(startDate.getDate() + i * 7);
+                    break;
+                case 'biweekly':
+                    recurDate.setDate(startDate.getDate() + i * 14);
+                    break;
+                case 'monthly':
+                    recurDate.setMonth(startDate.getMonth() + i);
+                    break;
+                default:
+                    if (i > 0) continue;
+            }
+            recurrenceDates.push(recurDate.toISOString().split('T')[0]);
+        }
+
+        const createdAppointments = [];
+
+        for (const recurDate of recurrenceDates) {
+            if (!isAdmin) {
+                const blockedCheck = await pool.query(
+                    `SELECT * FROM schedule_blocks WHERE date = $1 AND time_slot = $2`,
+                    [recurDate, `${formattedTime.split(":")[0]}`]
+                );
+                if (blockedCheck.rowCount > 0) {
+                    console.error("❌ Blocked time:", recurDate, formattedTime);
+                    continue;
+                }
+
+                const existingAppointment = await pool.query(
+                    `SELECT * FROM appointments WHERE date = $1 AND time = $2`,
+                    [recurDate, formattedTime]
+                );
+                if (existingAppointment.rowCount > 0) {
+                    console.error("❌ Already booked:", recurDate, formattedTime);
+                    continue;
+                }
+
+                const appointmentWeekday = new Date(recurDate + "T12:00:00").toLocaleDateString("en-US", {
+                    weekday: "long",
+                    timeZone: "America/New_York"
+                }).trim();
+
+                const availabilityCheck = await pool.query(
+                    `SELECT * FROM weekly_availability WHERE weekday = $1 AND appointment_type ILIKE $2 AND start_time = $3`,
+                    [appointmentWeekday, `%${title}%`, formattedTime]
+                );
+                if (availabilityCheck.rowCount === 0) {
+                    console.error("❌ Not available:", recurDate, formattedTime);
+                    continue;
+                }
+            }
+
+            const insertAppointment = await pool.query(
+                `INSERT INTO appointments (title, client_id, date, time, end_time, description, price)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+                [title, finalClientId, recurDate, formattedTime, formattedEndTime, description, basePrice]
+            );
+
+            const newAppointment = insertAppointment.rows[0];
+            createdAppointments.push(newAppointment);
+        }
+
+        // ✅ Payment Link (only generated once)
+        let paymentUrl = null;
         if (basePrice > 0) {
             if (payment_method === "Square") {
                 try {
                     const apiUrl = process.env.API_URL || "http://localhost:3001";
                     const squareResponse = await axios.post(`${apiUrl}/api/create-payment-link`, {
-                        email: client_email,
+                        email: finalClientEmail,
                         amount: basePrice,
-                        description: `Payment for ${title} on ${date} at ${time}`});
+                        description: `Payment for ${title} on ${recurrenceDates[0]} at ${time}`
+                    });
                     paymentUrl = squareResponse.data.url;
                 } catch (error) {
-                    console.error("❌ Error generating Square payment link:", error);
+                    console.error("❌ Error generating Square link:", error);
                 }
             } else if (payment_method === "Zelle" || payment_method === "CashApp") {
                 const encodedTitle = encodeURIComponent(title.trim());
-            
-                // ✅ Ensure the correct price (basePrice + add-ons) is used
                 paymentUrl = `${process.env.API_URL || 'http://localhost:3000'}/payment?price=${basePrice}&appointment_type=${encodedTitle}`;
             }
-            
         }
 
-        console.log("🔗 Generated Payment URL:", paymentUrl || "No payment required");
+        // ✅ Send ONE confirmation email
+        if (createdAppointments.length > 0) {
+            await sendTutoringApptEmail({
+                title,
+                email: finalClientEmail,
+                full_name: finalClientName,
+                date: createdAppointments[0].date,
+                time: createdAppointments[0].time,
+                description: `${createdAppointments.length} session(s) scheduled, starting on ${createdAppointments[0].date}`,
+                payment_method: payment_method
+            });
+        }
 
-        // ✅ Send confirmation email
-        const appointmentDetails = {
-            title: newAppointment.title,
-            email: client_email,
-            full_name: client_name,
-            date: newAppointment.date,
-            time: newAppointment.time,
-            description: newAppointment.description,
-            payment_method: payment_method
-        };
-
-        await sendTutoringApptEmail(appointmentDetails);
-        
-
-        // ✅ Return response with payment link
         res.status(201).json({
-            appointment: newAppointment,
+            message: `${createdAppointments.length} appointment(s) created.`,
+            appointments: createdAppointments,
             paymentLink: paymentUrl,
             paymentMethod: payment_method
         });
-
 
     } catch (error) {
         console.error("❌ Error saving appointment:", error);
         res.status(500).json({ error: "Failed to save appointment.", details: error.message });
     }
 });
+
 
 // Get all appointments
 app.get('/appointments', async (req, res) => {
