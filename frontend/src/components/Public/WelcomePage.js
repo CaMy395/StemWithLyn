@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 const WelcomePage = () => {
     return (
         <div className="welcome-page">
-            <h1 style={{ color: '#D894D2' }}>Welcome to Our Scheduling App</h1>
+            <h1 style={{ color: '#D894D2' }}>Welcome to STEM with Lyn</h1>
             <p>Please choose an option to get started:</p>
     
             <div style={{ display: 'flex', justifyContent: 'center', gap: '50px', marginTop: '50px' }}>
@@ -16,6 +16,11 @@ const WelcomePage = () => {
                 <Link to="/tech-engineering" style={{ textDecoration: 'none' }}>
                     <div className="bubble-button">
                         ⚙️<br />Tech / Engineering
+                    </div>
+                </Link>
+                <Link to="/login" style={{ textDecoration: 'none' }}>
+                    <div className="bubble-button">
+                        <br />Login
                     </div>
                 </Link>
             </div>
