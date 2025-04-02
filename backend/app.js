@@ -912,7 +912,6 @@ app.post('/appointments', async (req, res) => {
         let payment_method = req.body.payment_method;
 
         if (clientResult.rowCount === 0) {
-            console.log("🆕 New client detected:", finalClientName);
             const finalClientPhone = req.body.client_phone || "";
             const newClient = await pool.query(
                 `INSERT INTO clients (full_name, email, phone, payment_method) VALUES ($1, $2, $3, $4) RETURNING id`,
@@ -920,15 +919,12 @@ app.post('/appointments', async (req, res) => {
             );
             finalClientId = newClient.rows[0].id;
         } else {
-            console.log("✅ Existing client found:", clientResult.rows[0]);
             finalClientId = clientResult.rows[0].id;
         }
 
         const isAdmin = req.body.isAdmin || false;
         const formattedTime = time.length === 5 ? `${time}:00` : time;
         const formattedEndTime = end_time.length === 5 ? `${end_time}:00` : end_time;
-
-        const appointmentDate = new Date(date + "T12:00:00");
 
         function extractPriceFromTitle(title) {
             const match = title.match(/\$(\d+(\.\d{1,2})?)/);
@@ -937,29 +933,52 @@ app.post('/appointments', async (req, res) => {
 
         const basePrice = extractPriceFromTitle(title);
 
-        // ⏰ Recurrence support
+        // ⏰ Recurrence logic
+        const weekdays = req.body.weekdays || [];
         const recurrenceDates = [];
-        const startDate = new Date(date);
 
-        for (let i = 0; i < occurrences; i++) {
-            const recurDate = new Date(startDate);
-            switch (recurrence) {
-                case 'daily':
-                    recurDate.setDate(startDate.getDate() + i);
-                    break;
-                case 'weekly':
-                    recurDate.setDate(startDate.getDate() + i * 7);
-                    break;
-                case 'biweekly':
-                    recurDate.setDate(startDate.getDate() + i * 14);
-                    break;
-                case 'monthly':
-                    recurDate.setMonth(startDate.getMonth() + i);
-                    break;
-                default:
-                    if (i > 0) continue;
+        if ((recurrence === 'weekly' || recurrence === 'biweekly') && weekdays.length > 0) {
+            const weekdayMap = {
+                Monday: 0, Tuesday: 1, Wednesday: 2,
+                Thursday: 3, Friday: 4, Saturday: 5, Sunday: 6
+            };
+
+            const startDate = new Date(date);
+            const currentDay = startDate.getDay(); // Sunday = 0 ... Saturday = 6
+            const offsetToSunday = currentDay ; // Monday = 0
+            const weeks = parseInt(occurrences, 10);
+
+            for (let week = 0; week < weeks; week++) {
+                const baseWeek = new Date(startDate);
+                baseWeek.setDate(baseWeek.getDate() - offsetToSunday + (week * (recurrence === 'weekly' ? 7 : 14)));
+
+                for (const day of weekdays) {
+                    const dayIndex = weekdayMap[day];
+                    const recurDate = new Date(baseWeek);
+                    recurDate.setDate(baseWeek.getDate() + dayIndex);
+
+                    const formatted = recurDate.toISOString().split('T')[0];
+                    recurrenceDates.push(formatted);
+                }
             }
-            recurrenceDates.push(recurDate.toISOString().split('T')[0]);
+
+        } else {
+            // Daily/monthly or single-day fallback
+            const startDate = new Date(date);
+            for (let i = 0; i < occurrences; i++) {
+                const recurDate = new Date(startDate);
+                switch (recurrence) {
+                    case 'daily':
+                        recurDate.setDate(startDate.getDate() + i);
+                        break;
+                    case 'monthly':
+                        recurDate.setMonth(startDate.getMonth() + i);
+                        break;
+                    default:
+                        if (i > 0) continue;
+                }
+                recurrenceDates.push(recurDate.toISOString().split('T')[0]);
+            }
         }
 
         const createdAppointments = [];
@@ -970,19 +989,13 @@ app.post('/appointments', async (req, res) => {
                     `SELECT * FROM schedule_blocks WHERE date = $1 AND time_slot = $2`,
                     [recurDate, `${formattedTime.split(":")[0]}`]
                 );
-                if (blockedCheck.rowCount > 0) {
-                    console.error("❌ Blocked time:", recurDate, formattedTime);
-                    continue;
-                }
+                if (blockedCheck.rowCount > 0) continue;
 
                 const existingAppointment = await pool.query(
                     `SELECT * FROM appointments WHERE date = $1 AND time = $2`,
                     [recurDate, formattedTime]
                 );
-                if (existingAppointment.rowCount > 0) {
-                    console.error("❌ Already booked:", recurDate, formattedTime);
-                    continue;
-                }
+                if (existingAppointment.rowCount > 0) continue;
 
                 const appointmentWeekday = new Date(recurDate + "T12:00:00").toLocaleDateString("en-US", {
                     weekday: "long",
@@ -993,10 +1006,7 @@ app.post('/appointments', async (req, res) => {
                     `SELECT * FROM weekly_availability WHERE weekday = $1 AND appointment_type ILIKE $2 AND start_time = $3`,
                     [appointmentWeekday, `%${title}%`, formattedTime]
                 );
-                if (availabilityCheck.rowCount === 0) {
-                    console.error("❌ Not available:", recurDate, formattedTime);
-                    continue;
-                }
+                if (availabilityCheck.rowCount === 0) continue;
             }
 
             const insertAppointment = await pool.query(
@@ -1005,11 +1015,10 @@ app.post('/appointments', async (req, res) => {
                 [title, finalClientId, recurDate, formattedTime, formattedEndTime, description, basePrice]
             );
 
-            const newAppointment = insertAppointment.rows[0];
-            createdAppointments.push(newAppointment);
+            createdAppointments.push(insertAppointment.rows[0]);
         }
 
-        // ✅ Payment Link (only generated once)
+        // ✅ Payment link generation (only once)
         let paymentUrl = null;
         if (basePrice > 0) {
             if (payment_method === "Square") {
@@ -1030,18 +1039,19 @@ app.post('/appointments', async (req, res) => {
             }
         }
 
-        // ✅ Send ONE confirmation email
+        /* ✅ Send confirmation email
         if (createdAppointments.length > 0) {
+            const sessionDates = createdAppointments.map(a => a.date).join(', ');
             await sendTutoringApptEmail({
                 title,
                 email: finalClientEmail,
                 full_name: finalClientName,
                 date: createdAppointments[0].date,
                 time: createdAppointments[0].time,
-                description: `${createdAppointments.length} session(s) scheduled, starting on ${createdAppointments[0].date}`,
+                description: `${createdAppointments.length} session(s) scheduled:\n${sessionDates}`,
                 payment_method: payment_method
             });
-        }
+        }*/
 
         res.status(201).json({
             message: `${createdAppointments.length} appointment(s) created.`,
@@ -1055,6 +1065,9 @@ app.post('/appointments', async (req, res) => {
         res.status(500).json({ error: "Failed to save appointment.", details: error.message });
     }
 });
+
+
+
 
 
 // Get all appointments
@@ -1114,7 +1127,7 @@ app.get('/blocked-times', async (req, res) => {
         // ✅ Merge both lists and remove duplicates
         const allUnavailableTimes = [...new Set([...blockedTimes, ...bookedTimes])];
 
-        console.log(`✅ Blocked & Booked Times for ${date}:`, allUnavailableTimes);
+        
         res.json({ blockedTimes: allUnavailableTimes });
 
     } catch (error) {

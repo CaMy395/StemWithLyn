@@ -18,6 +18,8 @@ const ClientSchedulingPage = () => {
     const [clientEmail, setClientEmail] = useState("");
     const [clientPhone, setClientPhone] = useState("");
     const [paymentMethod, setPaymentMethod] = useState("Zelle"); // ✅ Default payment method
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
 
     
     /** ✅ Load Client Info from URL on First Load **/

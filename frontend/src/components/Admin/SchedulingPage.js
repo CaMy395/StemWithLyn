@@ -119,8 +119,9 @@ const SchedulingPage = () => {
             time,
             endTime,
             description,
-            recurrence = '',      // 'daily', 'weekly', 'biweekly', 'monthly'
-            occurrences = 1       // number of sessions to repeat
+            recurrence = '',
+            occurrences = 1,
+            weekdays = []
         } = newAppointment;
     
         const baseAppointment = {
@@ -132,49 +133,24 @@ const SchedulingPage = () => {
             end_time: endTime,
             description,
             isAdmin: true,
+            recurrence,
+            occurrences,
+            weekdays,
+            date, // ✅ include base date (starting point)
         };
     
-        const appointmentsToCreate = [];
-        let startDate = new Date(date);
-    
-        for (let i = 0; i < occurrences; i++) {
-            const recurrenceDate = new Date(startDate);
-    
-            switch (recurrence) {
-                case 'daily':
-                    recurrenceDate.setDate(startDate.getDate() + i);
-                    break;
-                case 'weekly':
-                    recurrenceDate.setDate(startDate.getDate() + i * 7);
-                    break;
-                case 'biweekly':
-                    recurrenceDate.setDate(startDate.getDate() + i * 14);
-                    break;
-                case 'monthly':
-                    recurrenceDate.setMonth(startDate.getMonth() + i);
-                    break;
-                default:
-                    if (i > 0) continue; // only run once for non-repeating
-            }
-    
-            const formattedDate = recurrenceDate.toISOString().split('T')[0];
-            appointmentsToCreate.push({ ...baseAppointment, date: formattedDate });
-        }
-    
         try {
-            const promises = appointmentsToCreate.map((appt) =>
-                axios.post(`${apiUrl}/appointments`, appt)
-            );
-            const responses = await Promise.all(promises);
+            const response = await axios.post(`${apiUrl}/appointments`, baseAppointment);
     
-            alert(`✅ ${responses.length} appointment(s) added successfully!`);
-            setAppointments([...appointments, ...responses.map(r => r.data.appointment || r.data)]);
+            alert(`✅ ${response.data.appointments.length} appointment(s) added successfully!`);
+            setAppointments([...appointments, ...response.data.appointments]);
             setNewAppointment({ title: '', client: '', date: '', time: '', endTime: '', description: '' });
         } catch (err) {
-            console.error("❌ Error adding recurring appointment(s):", err);
-            alert('Error adding appointments.');
+            console.error("❌ Error adding appointment:", err);
+            alert('Error adding appointment.');
         }
     };
+    
     
     
     const handleBlockTime = async () => {
@@ -683,28 +659,58 @@ const SchedulingPage = () => {
                         onChange={(e) => setNewAppointment({ ...newAppointment, endTime: e.target.value })}
                     />
                 </label>
-                <label>
+                {/* Repeat Frequency */}
+<label>
   Repeat:
   <select
     value={newAppointment.recurrence || ''}
     onChange={(e) => setNewAppointment({ ...newAppointment, recurrence: e.target.value })}
   >
     <option value="">None</option>
-    <option value="daily">Daily</option>
     <option value="weekly">Weekly</option>
     <option value="biweekly">Biweekly</option>
     <option value="monthly">Monthly</option>
   </select>
 </label>
-<label>
-  Occurrences:
-  <input
-    type="number"
-    min="1"
-    value={newAppointment.occurrences || 1}
-    onChange={(e) => setNewAppointment({ ...newAppointment, occurrences: e.target.value })}
-  />
-</label>
+
+{/* Number of Occurrences */}
+{newAppointment.recurrence && (
+  <>
+    <label>
+      Occurrences:
+      <input
+        type="number"
+        min="1"
+        value={newAppointment.occurrences || 1}
+        onChange={(e) => setNewAppointment({ ...newAppointment, occurrences: parseInt(e.target.value) })}
+      />
+    </label>
+
+    {/* Weekday Checkboxes (Only for weekly/biweekly) */}
+    {(newAppointment.recurrence === 'weekly' || newAppointment.recurrence === 'biweekly') && (
+      <div>
+        <label>Select days:</label>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day) => (
+            <label key={day}>
+              <input
+                type="checkbox"
+                checked={newAppointment.weekdays?.includes(day) || false}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  const updated = new Set(newAppointment.weekdays || []);
+                  checked ? updated.add(day) : updated.delete(day);
+                  setNewAppointment({ ...newAppointment, weekdays: Array.from(updated) });
+                }}
+              />
+              {day.slice(0, 3)}
+            </label>
+          ))}
+        </div>
+      </div>
+    )}
+  </>
+)}
 
                 <label>
                     Description:
