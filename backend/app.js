@@ -957,7 +957,7 @@ app.post('/appointments', async (req, res) => {
                     const recurDate = new Date(baseWeek);
                     recurDate.setDate(baseWeek.getDate() + dayIndex);
 
-                    const formatted = recurDate.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+                    const formatted = recurDate.toISOString().split('T')[0];
                     recurrenceDates.push(formatted);
                 }
             }
