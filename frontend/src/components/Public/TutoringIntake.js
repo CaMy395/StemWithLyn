@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import '../../App.css'; // Ensure your CSS file includes the .tutoring-intake-form styles
 import { useNavigate } from 'react-router-dom';
+import appointmentTypes from '../../data/appointmentTypes.json';
+
 
 const TutoringIntakeForm = () => {
     const navigate = useNavigate(); // Initialize navigate
@@ -202,6 +204,7 @@ const TutoringIntakeForm = () => {
                                     <option value="Science">Science</option>
                                     <option value="Reading">Reading</option>
                                     <option value="Writing">Writing</option>
+                                    <option value="Other">Other</option>
                                 </select>
                             </label>
 
@@ -259,25 +262,27 @@ const TutoringIntakeForm = () => {
 
                     {/* Which Service Would You Like to Book */}
                     <label>
-                        Which service would you like to book? *
-                        <select
-                            name="whyHelp"
-                            value={formData.whyHelp}
-                            onChange={handleChange}
-                            required
-                        >
-                            <option value="">Select</option>
-                            <option value="Virtual Tutoring (1 hour)">Virtual Tutoring (1 hour)</option>
-                            <option value="Virtual Tutoring Package (6 sessions)">Virtual Tutoring Package (6 sessions)</option>
-                            <option value="Virtual Tutoring Package (10 sessions)">Virtual Tutoring Package (10 sessions)</option>
-                            <option value="In-Person Tutoring (1 hour)">In-Person Tutoring (1 hour)</option>
-                            <option value="In-Person Tutoring (6 sessions)">In-Person Tutoring (6 sessions)</option>
-                            <option value="In-Person Tutoring (10 sessions)">In-Person Tutoring (10 sessions)</option>
-                            <option value="Third Party Organization - (UM)">United Mentors Organization</option>
-                            <option value="Third Party Organization">Above and Beyond Learning</option>
+    Which service would you like to book? *
+    <select
+        name="whyHelp"
+        value={formData.whyHelp}
+        onChange={handleChange}
+        required
+    >
+        <option value="">Select</option>
+        {appointmentTypes
+            .filter(type => type.category === "Tutoring")
+            .map((type, idx) => (
+                <option key={idx} value={type.title}>
+                    {type.title}
+                </option>
+            ))}
+        {/* Optional: Additional non-standard services */}
+        <option value="Third Party Organization - (UM)">United Mentors Organization</option>
+        <option value="Third Party Organization">Above and Beyond Learning</option>
+    </select>
+</label>
 
-                        </select>
-                    </label>
 
                     {/* Payment Method */}
                     <label>

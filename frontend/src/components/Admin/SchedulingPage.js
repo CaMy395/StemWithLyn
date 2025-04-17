@@ -136,20 +136,44 @@ const SchedulingPage = () => {
             recurrence,
             occurrences,
             weekdays,
-            date, // ✅ include base date (starting point)
+            date,
         };
     
         try {
-            const response = await axios.post(`${apiUrl}/appointments`, baseAppointment);
+            if (editingAppointment) {
+                // PATCH existing appointment
+                const patchBody = {
+                    title,
+                    description,
+                    date,
+                    time,
+                    end_time: endTime,
+                    client_id: clientId
+                };
     
-            alert(`✅ ${response.data.appointments.length} appointment(s) added successfully!`);
-            setAppointments([...appointments, ...response.data.appointments]);
+                const response = await axios.patch(`${apiUrl}/appointments/${editingAppointment.id}`, patchBody);
+                alert(`✅ Appointment updated successfully!`);
+    
+                // Update local state
+                setAppointments(prev =>
+                    prev.map(appt => appt.id === editingAppointment.id ? response.data : appt)
+                );
+            } else {
+                // POST new appointment(s)
+                const response = await axios.post(`${apiUrl}/appointments`, baseAppointment);
+                alert(`✅ ${response.data.appointments.length} appointment(s) added successfully!`);
+                setAppointments([...appointments, ...response.data.appointments]);
+            }
+    
+            // Reset form
             setNewAppointment({ title: '', client: '', date: '', time: '', endTime: '', description: '' });
+            setEditingAppointment(null);
         } catch (err) {
-            console.error("❌ Error adding appointment:", err);
-            alert('Error adding appointment.');
+            console.error("❌ Error saving appointment:", err);
+            alert('Error saving appointment.');
         }
     };
+    
     
     
     
