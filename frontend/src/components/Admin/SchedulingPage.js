@@ -6,6 +6,10 @@ import '../../App.css';
 import appointmentTypes from '../../data/appointmentTypes.json';
 
 const SchedulingPage = () => {
+    const formatDateOnly = (date) => {
+        return new Date(date).toISOString().split('T')[0];
+    };
+    
     const [appointments, setAppointments] = useState([]);
     const [clients, setClients] = useState([]);
     const [selectedDate, setSelectedDate] = useState(new Date());
@@ -123,7 +127,10 @@ const SchedulingPage = () => {
             occurrences = 1,
             weekdays = []
         } = newAppointment;
-    
+        
+        // 🚨 Force date to stay YYYY-MM-DD so it doesn't shift in production
+        const formattedDate = formatDateOnly(date);
+        
         const baseAppointment = {
             title,
             client_id: clientId,
@@ -136,8 +143,9 @@ const SchedulingPage = () => {
             recurrence,
             occurrences,
             weekdays,
-            date,
+            date: formattedDate, // ✅ Use the corrected date here!
         };
+        
     
         try {
             if (editingAppointment) {

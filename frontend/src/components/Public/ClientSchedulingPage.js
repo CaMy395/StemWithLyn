@@ -17,7 +17,7 @@ const ClientSchedulingPage = () => {
     const [clientName, setClientName] = useState("");
     const [clientEmail, setClientEmail] = useState("");
     const [clientPhone, setClientPhone] = useState("");
-    const [paymentMethod, setPaymentMethod] = useState("Zelle"); // ✅ Default payment method
+    const [paymentMethod, setPaymentMethod] = useState(""); // ✅ Default payment method
     const [isSubmitting, setIsSubmitting] = useState(false);
 
 
@@ -168,12 +168,6 @@ const ClientSchedulingPage = () => {
             <label>Client Phone Number:</label>
             <input type="phone" value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} placeholder="Enter your phone number" />
 
-            <label>Select Payment Method:</label>
-            <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
-                <option value="Zelle">Zelle</option>
-                <option value="CashApp">CashApp</option>
-                <option value="Square">Square</option>
-            </select>
 
             <label>Select Appointment Type:</label>
             <select value={selectedAppointmentType} onChange={(e) => setSelectedAppointmentType(e.target.value)}>
