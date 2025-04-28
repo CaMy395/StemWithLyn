@@ -957,7 +957,7 @@ app.post('/appointments', async (req, res) => {
                     const recurDate = new Date(baseWeek);
                     recurDate.setDate(baseWeek.getDate() + dayIndex);
 
-                    const formatted = recurDate.toISOString().split('T')[0];
+                    const formatted = moment(recurDate).tz('America/New_York').format('YYYY-MM-DD');
                     recurrenceDates.push(formatted);
                 }
             }
