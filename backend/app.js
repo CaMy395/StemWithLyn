@@ -939,28 +939,29 @@ app.post('/appointments', async (req, res) => {
 
         if ((recurrence === 'weekly' || recurrence === 'biweekly') && weekdays.length > 0) {
             const weekdayMap = {
-                Monday: 0, Tuesday: 1, Wednesday: 2,
-                Thursday: 3, Friday: 4, Saturday: 5, Sunday: 6
+                Monday: 1, Tuesday: 2, Wednesday: 3,
+                Thursday: 4, Friday: 5, Saturday: 6, Sunday: 0
             };
 
-            const startDate = new Date(date);
-            const currentDay = startDate.getDay(); // Sunday = 0 ... Saturday = 6
-            const offsetToSunday = currentDay ; // Monday = 0
-            const weeks = parseInt(occurrences, 10);
+            const startDate = new Date(date); // your selected start date
+            const startDayIndex = startDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
+
+            const weeks = parseInt(occurrences, 10); // how many weeks to repeat
 
             for (let week = 0; week < weeks; week++) {
                 const baseWeek = new Date(startDate);
-                baseWeek.setDate(baseWeek.getDate() - offsetToSunday + (week * (recurrence === 'weekly' ? 7 : 14)));
+                baseWeek.setDate(baseWeek.getDate() + (week * (recurrence === 'weekly' ? 7 : 14))); // 7 or 14 days
 
                 for (const day of weekdays) {
                     const dayIndex = weekdayMap[day];
                     const recurDate = new Date(baseWeek);
-                    recurDate.setDate(baseWeek.getDate() + dayIndex);
+                    recurDate.setDate(baseWeek.getDate() + (dayIndex - startDayIndex)); // relative to selected start
 
-                    const formatted = moment(recurDate).tz('America/New_York').format('YYYY-MM-DD');
+                    const formatted = moment(recurDate).tz('America/New_York').format('YYYY-MM-DD'); // ✅ correct timezone
                     recurrenceDates.push(formatted);
                 }
             }
+
 
         } else {
             // Daily/monthly or single-day fallback
