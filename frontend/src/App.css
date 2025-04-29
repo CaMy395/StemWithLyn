@@ -1329,3 +1329,106 @@ input:focus, textarea:focus, select:focus {
       gap: 20px;
   }
 }
+
+.profits-container {
+  padding: 20px;
+}
+
+.profits-section {
+  margin: 20px 0;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+}
+
+.profits-section h2 {
+  margin-bottom: 10px;
+}
+.payouts-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+  font-family: Arial, sans-serif;
+}
+
+.filters {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.filter-input {
+  padding: 10px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  width: 180px;
+}
+
+.totals {
+  margin-bottom: 20px;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.error-message {
+  color: red;
+  font-weight: bold;
+}
+
+.table-container {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+}
+
+.table-container {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+}
+
+.payouts-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.payouts-table th,
+.payouts-table td {
+  border: 1px solid #ddd;
+  padding: 10px;
+  text-align: left;
+}
+
+.payouts-table th {
+  background-color: #dda0dd;
+  font-weight: bold;
+}
+
+
+.appointment {
+  background-color: #ffe4e1; /* light pinkish */
+  border: 1px solid black; /* black outline */
+  border-radius: 6px;
+  padding: 5px;
+  box-shadow: 1px 1px 5px rgba(0,0,0,0.2);
+  font-size: 12px;
+  cursor: grab;
+  overflow: hidden;
+  text-align: center;
+}
+
+.appointment:hover {
+  transform: scale(1.05);
+  background-color: #ffd6d6;
+}
+
+.blocked {
+  background-color: lightgray;
+  text-align: center;
+  font-weight: bold;
+  border-radius: 6px;
+  padding: 5px;
+}

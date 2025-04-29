@@ -10,6 +10,7 @@ import ResetPassword from './components/Public/ResetPassword';
 import Dashboard from './components/Public/Dashboard';
 import ClientSchedulingPage from './components/Public/ClientSchedulingPage';
 import Payment from './components/Public/Payment';
+import Profits from './components/Admin/Profits';
 import WelcomePage from './components/Public/WelcomePage';
 
 //Admin Pages
@@ -124,6 +125,7 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
                                         {openDropdown === "tasks" && (
                                             <ul className="dropdown-menu">
                                                 <Link to="/admin/mytasks">My Tasks</Link> -
+                                                <Link to="/admin/profits">My Profits</Link> -
                                                 <Link to="/admin/intake-forms"> Intake Forms {totalFormsCount > 0 && (<span className="notification-badge">{totalFormsCount}</span>)}</Link>
                                             </ul>
                                         )}
@@ -167,6 +169,7 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
                 <Route path="/admin/scheduling-page" element={<SchedulingPage />} />
                 <Route path="/admin/availability-page" element={<AdminAvailabilityPage />} />
                 <Route path="/admin/clients" element={userRole === 'admin' ? <Clients /> : <Navigate to="/login" />} />
+                <Route path="/admin/profits" element={userRole === 'admin' ? <Profits /> : <Navigate to="/login" />} />
                 <Route path="/admin/intake-forms" element={userRole === 'admin' ? <AdminIntakeForms />: <Navigate to="/login" />} />
                 <Route path="/admin/mytasks" element={userRole === 'admin' ? <MyTasks /> : <Navigate to="/login" />} />
                 <Route path="/admin/mentors-log" element={userRole === 'admin' ? <MentorSessionLog /> : <Navigate to="/login" />} />

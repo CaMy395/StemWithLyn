@@ -6,15 +6,12 @@ import '../../App.css';
 import appointmentTypes from '../../data/appointmentTypes.json';
 
 const SchedulingPage = () => {
-    const formatDateOnly = (date) => {
-        return new Date(date).toISOString().split('T')[0];
-    };
-    
     const [appointments, setAppointments] = useState([]);
     const [clients, setClients] = useState([]);
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [blockedTimes, setBlockedTimes] = useState([]);
     const [showBlockModal, setShowBlockModal] = useState(false);
+    const [showAppointmentModal, setShowAppointmentModal] = useState(false);
     const [blockDate, setBlockDate] = useState('');
     const [blockStartTime, setBlockStartTime] = useState('');
     const [blockDuration, setBlockDuration] = useState(1);
@@ -127,10 +124,7 @@ const SchedulingPage = () => {
             occurrences = 1,
             weekdays = []
         } = newAppointment;
-        
-        // 🚨 Force date to stay YYYY-MM-DD so it doesn't shift in production
-        const formattedDate = formatDateOnly(date);
-        
+    
         const baseAppointment = {
             title,
             client_id: clientId,
@@ -143,9 +137,8 @@ const SchedulingPage = () => {
             recurrence,
             occurrences,
             weekdays,
-            date: formattedDate, // ✅ Use the corrected date here!
+            date,
         };
-        
     
         try {
             if (editingAppointment) {
@@ -182,7 +175,38 @@ const SchedulingPage = () => {
         }
     };
     
-    
+    const handleDrop = async (e, newDate, newHour) => {
+        const appointmentId = e.dataTransfer.getData('appointmentId');
+        if (!appointmentId) return;
+      
+        try {
+          const appt = appointments.find((a) => a.id === parseInt(appointmentId, 10));
+          if (!appt) return;
+      
+          const formattedNewTime = `${newHour.toString().padStart(2, '0')}:00`;
+      
+          await axios.patch(`${apiUrl}/appointments/${appt.id}`, {
+            title: appt.title,
+            description: appt.description,
+            date: newDate,
+            time: formattedNewTime,
+            end_time: appt.end_time,
+            client_id: appt.client_id,
+          });
+      
+          // After update, re-fetch appointments
+          const res = await axios.get(`${apiUrl}/appointments`);
+          const updatedAppointments = res.data.map((a) => ({
+            ...a,
+            date: new Date(a.date).toISOString().split('T')[0]
+          }));
+      
+          setAppointments(updatedAppointments);
+        } catch (error) {
+          console.error("Error during drag and drop update:", error);
+          alert('Error moving appointment.');
+        }
+      };     
     
     
     const handleBlockTime = async () => {
@@ -242,6 +266,7 @@ const SchedulingPage = () => {
             endTime: appointment.end_time,
             description: appointment.description,
         });
+        setShowAppointmentModal(true);
     };
 
     const handleDeleteAppointment = (appointmentId) => {
@@ -431,11 +456,27 @@ const SchedulingPage = () => {
                                         <td
                                         key={dayIndex}
                                         className="time-slot"
-                                        style={{
-                                            position: 'relative',
-                                            verticalAlign: 'top',
-                                            height: '30px',
+                                        style={{ position: 'relative', verticalAlign: 'top', height: '30px', cursor: 'pointer' }}
+                                        onClick={() => {
+                                            setNewAppointment({
+                                            title: '',
+                                            client: '',
+                                            date: dayString,
+                                            time: `${hour.toString().padStart(2, '0')}:00`,
+                                            endTime: '',
+                                            description: '',
+                                            recurrence: '',
+                                            occurrences: 1,
+                                            weekdays: [],
+                                            });
+                                            setEditingAppointment(null);
+                                            setShowAppointmentModal(true);
                                         }}
+                                        onDragOver={(e) => e.preventDefault()} // <<< ⭐ ALLOW DROP
+                                        onDrop={(e) => handleDrop(e, dayString, hour)} // <<< ⭐ HANDLE DROP
+
+
+
                                     >
                                         {/* Render blocked slots exactly like appointments */}
                                         {blockedEntriesAtTime.map((blocked, index) => {
@@ -494,13 +535,19 @@ const SchedulingPage = () => {
                                             <div
                                                 key={appointment.id}
                                                 className={`event appointment ${index > 0 ? 'overlapping' : ''}`}
+                                                draggable
+                                                onDragStart={(e) => {
+                                                    e.dataTransfer.setData('appointmentId', appointment.id);
+                                                }}
                                                 style={{
                                                     position: 'absolute',
                                                     top: `${topPercentage}%`,
-                                                    height: `${(durationInMinutes / 60) * 100}%`, // Height as a percentage
+                                                    height: `${(durationInMinutes / 60) * 100}%`,
                                                     padding: '2px',
+                                                    cursor: 'grab', // show hand cursor
                                                 }}
-                                            >
+                                                >
+
                                                 {clients.find((c) => c.id === appointment.client_id)?.full_name || 'Unknown'} -{' '}
                                                 {appointment.title}
                                                 <div>
@@ -532,9 +579,6 @@ const SchedulingPage = () => {
     return (
         <div>
             <h2>Scheduling Page</h2>
-            <button onClick={toggleView}>
-                {isWeekView ? 'Switch to Month View' : 'Switch to Week View'}
-            </button>
             
             {isWeekView ? weekView() : (
                 <Calendar
@@ -621,157 +665,151 @@ const SchedulingPage = () => {
                         </div>
                     </div>
                 )}
-
-                {/*Add Appointment*/}
-                <h3>{editingAppointment ? 'Edit Appointment' : 'Add Appointment'}</h3>
-                <form onSubmit={handleAddOrUpdateAppointment}>
-                <label>
-                    Title:
-                    <select
-                        value={newAppointment.title}
-                        onChange={(e) => {
-                            const selectedType = appointmentTypes.find((type) => type.title === e.target.value);
-                            setNewAppointment({
-                                ...newAppointment,
-                                title: selectedType.title,
-                                category: selectedType.category, // Include category in the state
-                            });
-                        }}
-                        required
-                    >
-                        <option value="" disabled>Select an Appointment Type</option>
-                        {appointmentTypes.map((type, index) => (
-                            <option key={index} value={type.title}>
-                                {type.title}
-                            </option>
-                        ))}
-                    </select>
-                </label>
-
-                <label>
-                    Client:
-                    <select
-                        value={newAppointment.client}
-                        onChange={(e) => setNewAppointment({ ...newAppointment, client: e.target.value })}
-                        required
-                    >
-                        <option value="" disabled>
-                            Select a Client
-                        </option>
-                        {clients.map((client) => (
-                            <option key={client.id} value={client.id}>
-                                {client.full_name}
-                            </option>
-                        ))}
-                    </select>
-                </label>
-                <label>
-                    Date:
-                    <input
-                        type="date"
-                        value={newAppointment.date || ''}
-                        onChange={(e) => setNewAppointment({ ...newAppointment, date: e.target.value })}
-                        required
-                    />
-                </label>
-                <label>
-                    Time:
-                    <input
-                        type="time"
-                        value={newAppointment.time}
-                        onChange={(e) => setNewAppointment({ ...newAppointment, time: e.target.value })}
-                        required
-                    />
-                </label>
-                <label>
-                    End Time:
-                    <input
-                        type="time"
-                        value={newAppointment.endTime}
-                        onChange={(e) => setNewAppointment({ ...newAppointment, endTime: e.target.value })}
-                    />
-                </label>
-                {/* Repeat Frequency */}
-<label>
-  Repeat:
-  <select
-    value={newAppointment.recurrence || ''}
-    onChange={(e) => setNewAppointment({ ...newAppointment, recurrence: e.target.value })}
-  >
-    <option value="">None</option>
-    <option value="weekly">Weekly</option>
-    <option value="biweekly">Biweekly</option>
-    <option value="monthly">Monthly</option>
-  </select>
-</label>
-
-{/* Number of Occurrences */}
-{newAppointment.recurrence && (
-  <>
-    <label>
-      Occurrences:
-      <input
-        type="number"
-        min="1"
-        value={newAppointment.occurrences || 1}
-        onChange={(e) => setNewAppointment({ ...newAppointment, occurrences: parseInt(e.target.value) })}
-      />
-    </label>
-
-    {/* Weekday Checkboxes (Only for weekly/biweekly) */}
-    {(newAppointment.recurrence === 'weekly' || newAppointment.recurrence === 'biweekly') && (
-      <div>
-        <label>Select days:</label>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day) => (
-            <label key={day}>
-              <input
-                type="checkbox"
-                checked={newAppointment.weekdays?.includes(day) || false}
-                onChange={(e) => {
-                  const checked = e.target.checked;
-                  const updated = new Set(newAppointment.weekdays || []);
-                  checked ? updated.add(day) : updated.delete(day);
-                  setNewAppointment({ ...newAppointment, weekdays: Array.from(updated) });
-                }}
-              />
-              {day.slice(0, 3)}
-            </label>
-          ))}
-        </div>
-      </div>
-    )}
-  </>
-)}
-
-                <label>
-                    Description:
-                    <textarea
-                        value={newAppointment.description}
-                        onChange={(e) => setNewAppointment({ ...newAppointment, description: e.target.value })}
-                    />
-                </label>
-                <button type="submit">{editingAppointment ? 'Update Appointment' : 'Add Appointment'}</button>
-                    {editingAppointment && (
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setEditingAppointment(null);
+                {showAppointmentModal && (
+                    <div className="modal">
+                        <div className="modal-content">
+                        {/* Your appointment form you pasted earlier */}
+                        <h3>{editingAppointment ? 'Edit Appointment' : 'Add Appointment'}</h3>
+                        <form onSubmit={handleAddOrUpdateAppointment}>
+                            <label>
+                            Title:
+                            <select
+                                value={newAppointment.title}
+                                onChange={(e) => {
+                                const selectedType = appointmentTypes.find((type) => type.title === e.target.value);
                                 setNewAppointment({
-                                    title: '',
-                                    client: '',
-                                    date: '',
-                                    time: '',
-                                    endTime: '',
-                                    description: '',
+                                    ...newAppointment,
+                                    title: selectedType?.title || '',
+                                    category: selectedType?.category || '',
                                 });
-                            }}
+                                }}
+                                required
+                            >
+                                <option value="" disabled>Select an Appointment Type</option>
+                                {appointmentTypes.map((type, index) => (
+                                <option key={index} value={type.title}>
+                                    {type.title}
+                                </option>
+                                ))}
+                            </select>
+                            </label>
+
+                            <label>
+                            Client:
+                            <select
+                                value={newAppointment.client}
+                                onChange={(e) => setNewAppointment({ ...newAppointment, client: e.target.value })}
+                                required
+                            >
+                                <option value="" disabled>Select a Client</option>
+                                {clients.map((client) => (
+                                <option key={client.id} value={client.id}>
+                                    {client.full_name}
+                                </option>
+                                ))}
+                            </select>
+                            </label>
+
+                            <label>
+                            Date:
+                            <input
+                                type="date"
+                                value={newAppointment.date || ''}
+                                onChange={(e) => setNewAppointment({ ...newAppointment, date: e.target.value })}
+                                required
+                            />
+                            </label>
+
+                            <label>
+                            Time:
+                            <input
+                                type="time"
+                                value={newAppointment.time}
+                                onChange={(e) => setNewAppointment({ ...newAppointment, time: e.target.value })}
+                                required
+                            />
+                            </label>
+
+                            <label>
+                            End Time:
+                            <input
+                                type="time"
+                                value={newAppointment.endTime}
+                                onChange={(e) => setNewAppointment({ ...newAppointment, endTime: e.target.value })}
+                            />
+                            </label>
+
+                            <label>
+                            Repeat:
+                            <select
+                                value={newAppointment.recurrence || ''}
+                                onChange={(e) => setNewAppointment({ ...newAppointment, recurrence: e.target.value })}
+                            >
+                                <option value="">None</option>
+                                <option value="weekly">Weekly</option>
+                                <option value="biweekly">Biweekly</option>
+                                <option value="monthly">Monthly</option>
+                            </select>
+                            </label>
+
+                            {newAppointment.recurrence && (
+                            <>
+                                <label>
+                                Occurrences:
+                                <input
+                                    type="number"
+                                    min="1"
+                                    value={newAppointment.occurrences || 1}
+                                    onChange={(e) => setNewAppointment({ ...newAppointment, occurrences: parseInt(e.target.value) })}
+                                />
+                                </label>
+
+                                {(newAppointment.recurrence === 'weekly' || newAppointment.recurrence === 'biweekly') && (
+                                <div>
+                                    <label>Select days:</label>
+                                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                    {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day) => (
+                                        <label key={day}>
+                                        <input
+                                            type="checkbox"
+                                            checked={newAppointment.weekdays?.includes(day) || false}
+                                            onChange={(e) => {
+                                            const checked = e.target.checked;
+                                            const updated = new Set(newAppointment.weekdays || []);
+                                            checked ? updated.add(day) : updated.delete(day);
+                                            setNewAppointment({ ...newAppointment, weekdays: Array.from(updated) });
+                                            }}
+                                        />
+                                        {day.slice(0, 3)}
+                                        </label>
+                                    ))}
+                                    </div>
+                                </div>
+                                )}
+                            </>
+                            )}
+
+                            <label>
+                            Description:
+                            <textarea
+                                value={newAppointment.description}
+                                onChange={(e) => setNewAppointment({ ...newAppointment, description: e.target.value })}
+                            />
+                            </label>
+
+                            <button type="submit">{editingAppointment ? 'Update Appointment' : 'Add Appointment'}</button>
+                            <button
+                            type="button"
+                            onClick={() => setShowAppointmentModal(false)}
                             style={{ marginLeft: '10px' }}
-                        >
+                            >
                             Cancel
-                        </button>
+                            </button>
+                        </form>
+                        </div>
+                    </div>
                     )}
-            </form>
+
         </div>
     );
 };

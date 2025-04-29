@@ -1438,6 +1438,117 @@ app.post('/mentors-log', async (req, res) => {
     }
 });
 
+app.post('/api/profits', async (req, res) => {
+    const { category, description, amount, type } = req.body;
+
+    if (!amount || isNaN(amount)) {
+        return res.status(400).json({ error: 'Valid amount is required.' });
+    }
+
+    try {
+        const query = `
+            INSERT INTO profits (category, description, amount, type)
+            VALUES ($1, $2, $3::FLOAT, $4)
+            RETURNING *;
+        `;
+        const values = [category, description, amount, type];
+        const result = await pool.query(query, values);
+        res.status(201).json(result.rows[0]);
+    } catch (error) {
+        console.error('Error adding to profits:', error);
+        res.status(500).json({ error: 'Failed to add to profits.' });
+    }
+});
+
+app.get('/api/profits', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT category, description, amount, type, created_at
+            FROM profits
+            ORDER BY created_at DESC;
+        `);
+        res.status(200).json(result.rows);
+    } catch (error) {
+        console.error('Error fetching profits data:', error);
+        res.status(500).json({ error: 'Failed to fetch profits data.' });
+    }
+});
+
+// Helper: Calculate the correct profit amount
+function determineProfitAmount(appointment, clientCategory) {
+    const thirdPartyRates = {
+      "Above & Beyond Learning": {
+        virtual: 35,
+        inPerson: 40
+      },
+      "Club Z": {
+        virtual: 25,
+        inPerson: 28
+      },
+      "United Mentors": {
+        virtual: 30,
+        inPerson: 35
+      },
+    };
+  
+    // If StemwithLyn or no category, parse from title
+    if (!clientCategory || clientCategory === 'StemwithLyn') {
+      const match = appointment.title.match(/\$(\d+(\.\d{1,2})?)/);
+      return match ? parseFloat(match[1]) : 0;
+    }
+  
+    // Third Party handling
+    const rates = thirdPartyRates[clientCategory];
+    if (!rates) return 0;
+  
+    const lowerTitle = appointment.title.toLowerCase();
+    if (lowerTitle.includes('in-person')) {
+      return rates.inPerson;
+    } else {
+      return rates.virtual;
+    }
+  }
+  
+// Update profits for already paid appointments
+app.post('/api/update-profits-for-old-payments', async (req, res) => {
+    try {
+      // Fetch all paid appointments and join with client categories
+      const appointmentsResult = await pool.query(`
+        SELECT a.id, a.title, a.price, c.category
+        FROM appointments a
+        JOIN clients c ON a.client_id = c.id
+        WHERE a.paid = true
+          AND NOT EXISTS (
+            SELECT 1 FROM profits
+            WHERE profits.description LIKE CONCAT('%', a.title, '%')
+            AND profits.amount = a.price
+          )
+      `);
+  
+      for (const appt of appointmentsResult.rows) {
+        const calculatedAmount = determineProfitAmount(appt, appt.category);
+  
+        const isThirdParty = appt.category && appt.category !== 'StemwithLyn';
+  
+        await pool.query(
+          `INSERT INTO profits (category, description, amount, type)
+           VALUES ($1, $2, $3, $4)`,
+          [
+            isThirdParty ? 'Income (Third Party)' : 'Income',
+            `Payment for Tutoring: ${appt.title}`,
+            calculatedAmount,
+            'Tutoring Payment',
+          ]
+        );
+      }
+  
+      res.json({ message: 'Profits table updated successfully based on paid appointments.' });
+    } catch (error) {
+      console.error('Error updating profits for old payments:', error);
+      res.status(500).json({ error: 'Failed to update profits.' });
+    }
+  });
+  
 
 // Serve static files from the React app
 app.use(express.static(path.join(__dirname, '../frontend/build')));
