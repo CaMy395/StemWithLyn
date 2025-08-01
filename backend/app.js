@@ -10,13 +10,74 @@ import bcrypt from 'bcrypt';
 import pool from './db.js'; // Import the centralized pool connection
 import axios from "axios"; // ✅ Import axios
 import {
-    sendAppointmentReminderEmail , sendRegistrationEmail,sendResetEmail, sendTutoringIntakeEmail, sendTutoringApptEmail, sendTutoringRescheduleEmail,sendCancellationEmail, sendTextMessage, sendTaskTextMessage,  sendMentorSessionLogEmail, sendEmailCampaign
+    sendPaymentEmail, sendAppointmentReminderEmail , sendRegistrationEmail,sendResetEmail, sendTutoringIntakeEmail, sendTutoringApptEmail, sendTutoringRescheduleEmail,sendCancellationEmail, sendTextMessage, sendTaskTextMessage,  sendMentorSessionLogEmail, sendEmailCampaign
 } from './emailService.js';
 import cron from 'node-cron';
 import 'dotenv/config';
 import {WebSocketServer} from 'ws';
 import http from 'http';
 import fs from 'fs';
+import { google } from 'googleapis';
+
+const oauth2Client = new google.auth.OAuth2(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  process.env.GOOGLE_REDIRECT_URI
+);
+
+oauth2Client.setCredentials({
+  access_token: process.env.GOOGLE_ACCESS_TOKEN,
+  refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+});
+
+const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+
+function padToSeconds(time) {
+  return time.length === 5 ? `${time}:00` : time;
+}
+
+function formatDate(date) {
+  // Ensures it's in YYYY-MM-DD format even if passed as a Date object
+  return new Date(date).toISOString().split('T')[0];
+}
+
+async function createGoogleCalendarEvent(appointment, client) {
+  const startTime = padToSeconds(appointment.time);
+  const endTime = padToSeconds(appointment.end_time || appointment.time);
+  const date = formatDate(appointment.date);
+
+  const event = {
+    summary: appointment.title,
+    description: appointment.description || '',
+    start: {
+      dateTime: `${date}T${startTime}`,
+      timeZone: 'America/New_York',
+    },
+    end: {
+      dateTime: `${date}T${endTime}`,
+      timeZone: 'America/New_York',
+    },
+    attendees: client?.email ? [{ email: client.email }] : [],
+  };
+
+  try {
+    console.log("📤 Creating Google Calendar Event with:", JSON.stringify(event, null, 2));
+
+    const response = await calendar.events.insert({
+      calendarId: process.env.GOOGLE_CALENDAR_ID || 'stemwithlyn@gmail.com',
+      resource: event,
+    });
+
+    console.log("📆 Google Calendar Event Created:", response.data.htmlLink);
+  } catch (error) {
+    console.error("❌ Failed to create Google Calendar event:", error.message);
+    if (error.response?.data) {
+      console.error("🔍 Google API Error Details:", JSON.stringify(error.response.data, null, 2));
+    }
+  }
+}
+
+
 
 const jsonPath = path.join(process.cwd(), '../frontend/src/data/appointmentTypes.json');
 const appointmentTypes = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
@@ -847,43 +908,47 @@ const client = new Client({
 const checkoutApi = client.checkoutApi;
 
 app.post('/api/create-payment-link', async (req, res) => {
-    const { email, amount, description } = req.body;
+  const { email, amount, itemName, appointmentData } = req.body;
 
-    if (!email || !amount || isNaN(amount)) {
-        return res.status(400).json({ error: 'Email and valid amount are required.' });
-    }
+  if (!email || !amount || isNaN(amount)) {
+    return res.status(400).json({ error: 'Email and valid amount are required.' });
+  }
 
-    try {
-        // ✅ Calculate Square Fees: 2.9% + $0.30
-        const processingFee = (amount * 0.029) + 0.30;
-        const adjustedAmount = Math.round((parseFloat(amount) + processingFee) * 100); // Convert to cents
+  try {
+    const processingFee = (amount * 0.029) + 0.30;
+    const adjustedAmount = Math.round((parseFloat(amount) + processingFee) * 100);
 
-        console.log(`💰 Original Amount: $${amount}, Adjusted Amount: $${(adjustedAmount / 100).toFixed(2)}`);
+    const redirectUrl = process.env.NODE_ENV === 'production'
+  ? `https://stemwithlyn.com/payment-success?title=${encodeURIComponent(appointmentData.title)}&client_name=${encodeURIComponent(appointmentData.client_name)}&client_email=${encodeURIComponent(appointmentData.client_email)}&client_phone=${encodeURIComponent(appointmentData.client_phone)}&date=${appointmentData.date}&time=${appointmentData.time}&end_time=${appointmentData.end_time}`
+  : `http://localhost:3000/payment-success?title=${encodeURIComponent(appointmentData.title)}&client_name=${encodeURIComponent(appointmentData.client_name)}&client_email=${encodeURIComponent(appointmentData.client_email)}&client_phone=${encodeURIComponent(appointmentData.client_phone)}&date=${appointmentData.date}&time=${appointmentData.time}&end_time=${appointmentData.end_time}`;
 
-        const response = await checkoutApi.createPaymentLink({
-            idempotencyKey: new Date().getTime().toString(),
-            quickPay: {
-                name: 'Payment for Services',
-                description: description || 'Please complete your payment.',
-                priceMoney: {
-                    amount: adjustedAmount, // ✅ Use adjusted amount to cover Square fees
-                    currency: 'USD',
-                },
-                locationId: process.env.SQUARE_LOCATION_ID,
-            },
-        });
+    const response = await checkoutApi.createPaymentLink({
+      idempotencyKey: new Date().getTime().toString(),
+      quickPay: {
+        name: itemName || 'Payment for Services',
+        description: 'Please complete your payment.',
+        priceMoney: {
+          amount: adjustedAmount,
+          currency: 'USD',
+        },
+        locationId: process.env.SQUARE_LOCATION_ID,
+      },
+      checkoutOptions: {
+        redirectUrl,
+        metadata: {
+          appointmentData: JSON.stringify(appointmentData)
+        }
+      }
+    });
 
-        const paymentLink = response.result.paymentLink.url;
-
-        // Send the payment link via email
-        await sendPaymentEmail(email, paymentLink);
-
-        res.status(200).json({ url: paymentLink });
-    } catch (error) {
-        console.error('Error creating payment link:', error);
-        res.status(500).json({ error: 'Failed to create payment link' });
-    }
+    const paymentLink = response.result.paymentLink.url;
+    res.status(200).json({ url: paymentLink });
+  } catch (error) {
+    console.error('❌ Error creating payment link:', error);
+    res.status(500).json({ error: 'Failed to create payment link' });
+  }
 });
+
 
 app.post('/appointments', async (req, res) => {
     try {
@@ -1016,6 +1081,11 @@ app.post('/appointments', async (req, res) => {
                 [title, finalClientId, recurDate, formattedTime, formattedEndTime, description, basePrice]
             );
 
+            await createGoogleCalendarEvent(insertAppointment.rows[0], {
+            email: finalClientEmail,
+            full_name: finalClientName
+            });
+
             createdAppointments.push(insertAppointment.rows[0]);
         }
 
@@ -1066,9 +1136,6 @@ app.post('/appointments', async (req, res) => {
         res.status(500).json({ error: "Failed to save appointment.", details: error.message });
     }
 });
-
-
-
 
 
 // Get all appointments
@@ -1435,6 +1502,34 @@ app.post('/mentors-log', async (req, res) => {
     } catch (error) {
         console.error("❌ Error handling mentor session log:", error);
         res.status(500).json({ error: "Failed to submit session log." });
+    }
+});
+
+// ✅ Backend (add to app.js)
+app.get("/api/square-confirm/:checkoutId", async (req, res) => {
+    const { checkoutId } = req.params;
+
+    try {
+        const response = await client.checkoutApi.retrievePaymentLink(checkoutId);
+        const payment = response.result.paymentLink;
+
+        if (!payment || payment.status !== 'ACTIVE') {
+            return res.status(400).json({ error: 'Invalid or incomplete payment.' });
+        }
+
+        const metadata = payment.checkoutOptions?.metadata;
+        if (!metadata?.appointmentData) {
+            return res.status(400).json({ error: 'Missing appointment metadata.' });
+        }
+
+        const appointmentData = JSON.parse(metadata.appointmentData);
+
+        const appointmentRes = await axios.post(`${process.env.API_URL || 'http://localhost:3001'}/appointments`, appointmentData);
+
+        res.status(200).json({ message: "Appointment confirmed!", data: appointmentRes.data });
+    } catch (error) {
+        console.error("❌ Error confirming Square payment:", error);
+        res.status(500).json({ error: "Failed to confirm payment." });
     }
 });
 

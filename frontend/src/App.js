@@ -21,6 +21,7 @@ import SchedulingPage from './components/Admin/SchedulingPage';
 import AdminAvailabilityPage from './components/Admin/AdminAvailabilityPage';
 import AdminDashboard from './components/Admin/AdminDashboard';
 import MentorSessionLog from './components/Admin/MentorSessionLog';
+import PaymentSuccess from './components/Public/PaymentSuccess';
 
 import WebSocketProvider from './WebSocketProvider';
 import './App.css';
@@ -164,6 +165,7 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
                 <Route path="/tech-engineering" element={<TechIntake />} />
                 <Route path="/client-scheduling" element={<ClientSchedulingPage />} />
                 <Route path="/payment" element={<Payment />} />
+                <Route path="/payment-success" element={<PaymentSuccess />} />
                 <Route path="/admin" element={userRole === 'admin' ? <AdminDashboard /> : <Navigate to="/login" />} />
                 <Route path="/user" element={userRole === 'user' ? <Dashboard /> : <Navigate to="/login" />} />
                 <Route path="/admin/scheduling-page" element={<SchedulingPage />} />

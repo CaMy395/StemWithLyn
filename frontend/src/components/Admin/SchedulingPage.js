@@ -16,6 +16,7 @@ const SchedulingPage = () => {
     const [blockStartTime, setBlockStartTime] = useState('');
     const [blockDuration, setBlockDuration] = useState(1);
     const [blockLabel, setBlockLabel] = useState('');
+    const [holidays, setHolidays] = useState([]);
 
     const [isWeekView, setIsWeekView] = useState(() => {
         // Check localStorage for the view preference, default to false (month view)
@@ -55,7 +56,25 @@ const SchedulingPage = () => {
             console.error("❌ Error fetching blocked times:", error);
         }
     };
+    
+    useEffect(() => {
+        const fetchHolidays = async () => {
+          try {
+            const response = await fetch('https://date.nager.at/api/v3/PublicHolidays/2025/US');
+            const data = await response.json();
+            const formatted = data.map(holiday => ({
+              date: holiday.date, // format: YYYY-MM-DD
+              name: holiday.localName,
+            }));
+            setHolidays(formatted);
+          } catch (error) {
+            console.error('❌ Failed to fetch holidays:', error);
+          }
+        };
       
+        fetchHolidays();
+      }, []);
+  
     useEffect(() => {
         const fetchData = async () => {
             try {
@@ -208,7 +227,6 @@ const SchedulingPage = () => {
         }
       };     
     
-    
     const handleBlockTime = async () => {
         if (!blockDate || !blockStartTime || !blockDuration || !blockLabel) {
             alert("⚠️ Please fill in all fields.");
@@ -315,14 +333,6 @@ const SchedulingPage = () => {
         );
     };
 
-    const toggleView = () => {
-        setIsWeekView((prevView) => {
-            const newView = !prevView;
-            localStorage.setItem('isWeekView', newView); // Save to localStorage
-            return newView;
-        });
-    };
-
     const togglePaidStatus = async (type, id, newPaidStatus) => {
         const endpoint = `${apiUrl}/appointments/${id}/paid`;
     
@@ -426,7 +436,8 @@ const SchedulingPage = () => {
                                 <td>{formatHour(hour)}</td>
                                 {weekDates.map((date, dayIndex) => {
                                     const dayString = date.toISOString().split('T')[0];
-    
+                                    const holiday = holidays.find(h => h.date === dayString);
+
                                     // Filter appointments for this hour
                                     const appointmentsAtTime = appointments.filter((appointment) => {
                                         const normalizedDate = new Date(appointment.date).toISOString().split('T')[0];
@@ -474,9 +485,6 @@ const SchedulingPage = () => {
                                         }}
                                         onDragOver={(e) => e.preventDefault()} // <<< ⭐ ALLOW DROP
                                         onDrop={(e) => handleDrop(e, dayString, hour)} // <<< ⭐ HANDLE DROP
-
-
-
                                     >
                                         {/* Render blocked slots exactly like appointments */}
                                         {blockedEntriesAtTime.map((blocked, index) => {
@@ -564,6 +572,19 @@ const SchedulingPage = () => {
                                             </div>
                                         );
                                     })}
+                                    {hour ===9 && holiday && (
+                                        <div
+                                          style={{
+                                            backgroundColor: '#ffe6e6',
+                                            color: '#990000',
+                                            fontWeight: 'bold',
+                                            textAlign: 'center',
+                                            padding: '2px',
+                                          }}
+                                        >
+                                          🎉 {holiday.name}
+                                        </div>
+                                      )}
                                 </div>  
                            </td>
                         );

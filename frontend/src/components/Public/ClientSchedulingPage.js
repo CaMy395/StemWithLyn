@@ -109,51 +109,41 @@ const ClientSchedulingPage = () => {
     };
 
     /** ✅ Handle Booking **/
-    const bookAppointment = async (slot) => {
-        if (!clientName || !clientEmail || !clientPhone || !selectedAppointmentType || !selectedDate) {
-            alert("Please fill out all fields before booking.");
-            return;
-        }
-    
-        // ✅ Extract base price from title
-        const extractPriceFromTitle = (title) => {
-            const match = title.match(/\$(\d+(\.\d{1,2})?)/);
-            return match ? parseFloat(match[1]) : 0;
-        };
-    
-        // ✅ Calculate total price (base price)
-        const basePrice = extractPriceFromTitle(selectedAppointmentType);
-            
-        try {
-            const response = await axios.post(`${apiUrl}/appointments`, {
-                title: selectedAppointmentType,
-                client_name: clientName,
-                client_email: clientEmail,
-                client_phone: clientPhone,
-                date: selectedDate.toISOString().split("T")[0],
-                time: slot.start_time,
-                end_time: slot.end_time,
-                description: `Client booked a ${selectedAppointmentType} appointment`,
-                payment_method: paymentMethod,
-            });
-    
-            if (response.status === 201) {
-                const { paymentLink } = response.data;
-    
-                alert("Appointment booked successfully!");
-    
-                if (paymentMethod === "Square" && paymentLink) {
-                    console.log("🔗 Redirecting to Square Payment:", paymentLink);
-                    window.location.href = paymentLink; // ✅ Redirects to Square
-                }     
-                    navigate(`/payment?price=${basePrice}`);
-            }
-        } catch (error) {
-            console.error("❌ Error booking appointment:", error);
-            alert("Failed to book appointment. Please try again.");
-        }
+const bookAppointment = async (slot) => {
+    if (!clientName || !clientEmail || !clientPhone || !selectedAppointmentType || !selectedDate) {
+        alert("Please fill out all fields before booking.");
+        return;
+    }
+
+    const basePrice = parseFloat(selectedAppointmentType.match(/\$(\d+(\.\d{1,2})?)/)?.[1] || 0);
+
+    const appointmentData = {
+        title: selectedAppointmentType,
+        client_name: clientName,
+        client_email: clientEmail,
+        client_phone: clientPhone,
+        date: selectedDate.toISOString().split("T")[0],
+        time: slot.start_time,
+        end_time: slot.end_time,
+        description: `Client booked a ${selectedAppointmentType} appointment`,
+        payment_method: "Square",
     };
-    
+
+    try {
+        const res = await axios.post(`${apiUrl}/api/create-payment-link`, {
+            email: clientEmail,
+            amount: basePrice,
+            itemName: selectedAppointmentType,
+            appointmentData,
+        });
+
+        const { url } = res.data;
+        window.location.href = url;
+    } catch (err) {
+        console.error("❌ Error generating Square payment link:", err);
+        alert("Failed to generate payment link.");
+    }
+};
 
     return (
         <div className="client-scheduling">
