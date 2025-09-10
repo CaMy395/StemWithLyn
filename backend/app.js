@@ -1110,7 +1110,7 @@ app.post('/appointments', async (req, res) => {
             }
         }
 
-        /* ✅ Send confirmation email
+        // ✅ Send confirmation email
         if (createdAppointments.length > 0) {
             const sessionDates = createdAppointments.map(a => a.date).join(', ');
             await sendTutoringApptEmail({
@@ -1122,7 +1122,7 @@ app.post('/appointments', async (req, res) => {
                 description: `${createdAppointments.length} session(s) scheduled:\n${sessionDates}`,
                 payment_method: payment_method
             });
-        }*/
+        }
 
         res.status(201).json({
             message: `${createdAppointments.length} appointment(s) created.`,
