@@ -769,26 +769,56 @@ app.post('/api/tech-intake', async (req, res) => {
 });
 
 app.post('/api/clients', async (req, res) => {
-    const { full_name, email, phone, payment_method, category } = req.body; // Destructure the incoming data
+  let { full_name, email, phone, payment_method, category } = req.body || {};
 
-    // Validate input data
-    if (!full_name) {
-        return res.status(400).json({ error: 'Full name is required' });
-    }
+  // 1) Required fields
+  if (!full_name || !String(full_name).trim()) {
+    return res.status(400).json({ error: 'Full name is required' });
+  }
 
-    try {
-        // Insert the new client into the database
-        const result = await pool.query(
-            'INSERT INTO clients (full_name, email, phone, payment_method, category) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-            [full_name, email || null, phone || null, payment_method || null, category || null] // Default email and phone to NULL if not provided
-        );
+  // 2) Normalize fields
+  full_name = String(full_name).trim();
+  email = (email ?? '').toString().trim().toLowerCase();
+  if (email === '') email = null; // treat empty string as NULL to avoid unique '' conflicts
+  phone = (phone ?? '').toString().trim() || null;
+  payment_method = (payment_method ?? '').toString().trim() || null;
+  category = (category ?? 'StemwithLyn').toString().trim() || 'StemwithLyn';
 
-        res.status(201).json(result.rows[0]); // Respond with the created client
-    } catch (error) {
-        console.error('Error adding client:', error);
-        res.status(500).json({ error: 'Failed to add client' });
-    }
+  try {
+    // 3) If we have an email, do an UPSERT on the unique (email); else plain INSERT with email=NULL
+    const sqlWithEmail = `
+      INSERT INTO clients (full_name, email, phone, payment_method, category)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (email) DO UPDATE
+        SET full_name = EXCLUDED.full_name,
+            phone = EXCLUDED.phone,
+            payment_method = EXCLUDED.payment_method,
+            category = EXCLUDED.category
+      RETURNING id, full_name, email, phone, payment_method, category;
+    `;
+
+    const sqlNoEmail = `
+      INSERT INTO clients (full_name, email, phone, payment_method, category)
+      VALUES ($1, NULL, $2, $3, $4)
+      RETURNING id, full_name, email, phone, payment_method, category;
+    `;
+
+    const paramsWithEmail = [full_name, email, phone, payment_method, category];
+    const paramsNoEmail = [full_name, phone, payment_method, category];
+
+    const r = await pool.query(email ? sqlWithEmail : sqlNoEmail, email ? paramsWithEmail : paramsNoEmail);
+
+    return res.status(201).json(r.rows[0]);
+  } catch (err) {
+    // Surface helpful diagnostics to the FE
+    console.error('❌ Error adding/updating client:', err);
+    return res.status(500).json({
+      error: 'Failed to add client',
+      details: err?.detail || err?.message || 'Unknown database error'
+    });
+  }
 });
+
 
 app.get('/api/clients', async (req, res) => {
     try {
