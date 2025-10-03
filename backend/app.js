@@ -771,46 +771,68 @@ app.post('/api/tech-intake', async (req, res) => {
 app.post('/api/clients', async (req, res) => {
   let { full_name, email, phone, payment_method, category } = req.body || {};
 
-  // 1) Required fields
+  // Required
   if (!full_name || !String(full_name).trim()) {
     return res.status(400).json({ error: 'Full name is required' });
   }
 
-  // 2) Normalize fields
+  // Normalize
   full_name = String(full_name).trim();
   email = (email ?? '').toString().trim().toLowerCase();
-  if (email === '') email = null; // treat empty string as NULL to avoid unique '' conflicts
+  if (email === '') email = null; // empty string -> NULL
   phone = (phone ?? '').toString().trim() || null;
   payment_method = (payment_method ?? '').toString().trim() || null;
   category = (category ?? 'StemwithLyn').toString().trim() || 'StemwithLyn';
 
+  // Categories that may share emails (multiple kids per parent)
+  const TUTORING_CATEGORIES = new Set(['StemwithLyn', 'Club Z', 'United Mentors', 'Above & beyond Learning']);
+  const isTutoring = email && TUTORING_CATEGORIES.has(category);
+
   try {
-    // 3) If we have an email, do an UPSERT on the unique (email); else plain INSERT with email=NULL
-    const sqlWithEmail = `
-      INSERT INTO clients (full_name, email, phone, payment_method, category)
-      VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT (email) DO UPDATE
-        SET full_name = EXCLUDED.full_name,
-            phone = EXCLUDED.phone,
-            payment_method = EXCLUDED.payment_method,
-            category = EXCLUDED.category
-      RETURNING id, full_name, email, phone, payment_method, category;
-    `;
+    if (!email) {
+      // No email, just insert (cannot dedupe without email)
+      const ins = await pool.query(
+        `INSERT INTO clients (full_name, email, phone, payment_method, category)
+         VALUES ($1, NULL, $2, $3, $4)
+         RETURNING id, full_name, email, phone, payment_method, category`,
+        [full_name, phone, payment_method, category]
+      );
+      return res.status(201).json(ins.rows[0]);
+    }
 
-    const sqlNoEmail = `
-      INSERT INTO clients (full_name, email, phone, payment_method, category)
-      VALUES ($1, NULL, $2, $3, $4)
-      RETURNING id, full_name, email, phone, payment_method, category;
-    `;
-
-    const paramsWithEmail = [full_name, email, phone, payment_method, category];
-    const paramsNoEmail = [full_name, phone, payment_method, category];
-
-    const r = await pool.query(email ? sqlWithEmail : sqlNoEmail, email ? paramsWithEmail : paramsNoEmail);
-
-    return res.status(201).json(r.rows[0]);
+    if (isTutoring) {
+      // Tutoring portal: allow duplicate emails, but prevent exact duplicate person
+      // Relies on the unique index: uniq_clients_email_name_tutor
+      const upsertTutoring = await pool.query(
+        `
+        INSERT INTO clients (full_name, email, phone, payment_method, category)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT ON CONSTRAINT uniq_clients_email_name_tutor DO UPDATE
+          SET phone = EXCLUDED.phone,
+              payment_method = EXCLUDED.payment_method
+        RETURNING id, full_name, email, phone, payment_method, category
+        `,
+        [full_name, email, phone, payment_method, category]
+      );
+      return res.status(201).json(upsertTutoring.rows[0]);
+    } else {
+      // Non-tutoring: email must be unique → upsert by email
+      const upsertNonTutoring = await pool.query(
+        `
+        INSERT INTO clients (full_name, email, phone, payment_method, category)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (email) DO UPDATE
+          SET full_name = EXCLUDED.full_name,
+              phone = EXCLUDED.phone,
+              payment_method = EXCLUDED.payment_method,
+              category = EXCLUDED.category
+        RETURNING id, full_name, email, phone, payment_method, category
+        `,
+        [full_name, email, phone, payment_method, category]
+      );
+      return res.status(201).json(upsertNonTutoring.rows[0]);
+    }
   } catch (err) {
-    // Surface helpful diagnostics to the FE
     console.error('❌ Error adding/updating client:', err);
     return res.status(500).json({
       error: 'Failed to add client',
@@ -818,7 +840,6 @@ app.post('/api/clients', async (req, res) => {
     });
   }
 });
-
 
 app.get('/api/clients', async (req, res) => {
     try {
