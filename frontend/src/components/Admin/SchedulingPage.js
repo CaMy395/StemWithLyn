@@ -23,6 +23,9 @@ const SchedulingPage = () => {
         return localStorage.getItem('isWeekView') === 'true';
     });
 
+    // NEW: plus button options modal (Add Appointment / Block Time)
+    const [showPlusOptionsModal, setShowPlusOptionsModal] = useState(false);
+
     const [newAppointment, setNewAppointment] = useState({
         title: '',
         client: '',
@@ -30,6 +33,9 @@ const SchedulingPage = () => {
         time: '',
         endTime: '',
         description: '',
+        recurrence: '',
+        occurrences: 1,
+        weekdays: [],
     });
 
     const [editingAppointment, setEditingAppointment] = useState(null);
@@ -186,8 +192,19 @@ const SchedulingPage = () => {
             }
     
             // Reset form
-            setNewAppointment({ title: '', client: '', date: '', time: '', endTime: '', description: '' });
+            setNewAppointment({ 
+                title: '', 
+                client: '', 
+                date: '', 
+                time: '', 
+                endTime: '', 
+                description: '',
+                recurrence: '',
+                occurrences: 1,
+                weekdays: [],
+            });
             setEditingAppointment(null);
+            setShowAppointmentModal(false);
         } catch (err) {
             console.error("❌ Error saving appointment:", err);
             alert('Error saving appointment.');
@@ -283,6 +300,9 @@ const SchedulingPage = () => {
             time: appointment.time,
             endTime: appointment.end_time,
             description: appointment.description,
+            recurrence: '',
+            occurrences: 1,
+            weekdays: [],
         });
         setShowAppointmentModal(true);
     };
@@ -388,7 +408,7 @@ const SchedulingPage = () => {
         startOfWeek.setDate(selectedDate.getDate() - selectedDate.getDay()); // Start on Sunday
         startOfWeek.setHours(0, 0, 0, 0); // Ensure time is midnight
 
-        const hours = Array.from({ length: 15 }, (_, i) => i+8); // Generate hours: 0 to 23
+        const hours = Array.from({ length: 15 }, (_, i) => i+8); // Generate hours: 8am–10pm
         const weekDates = Array.from({ length: 7 }, (_, i) => {
             const day = new Date(startOfWeek);
             day.setDate(startOfWeek.getDate() + i);
@@ -418,15 +438,17 @@ const SchedulingPage = () => {
                         <tr>
                             <th>Time</th>
                             {weekDates.map((date, i) => (
-                                <th key={i}onClick={() => setSelectedDate(date)} // Update selectedDate on click
-                                style={{ cursor: 'pointer', textAlign: 'center' }} // Add pointer cursor for clarity
-                            >
-                                <div style={{ textAlign: 'center' }}>
-                                    {date.toLocaleDateString('en-US', { weekday: 'short' })}
-                                    <br />
-                                    {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                </div>
-                            </th>
+                                <th 
+                                    key={i}
+                                    onClick={() => setSelectedDate(date)} // Update selectedDate on click
+                                    style={{ cursor: 'pointer', textAlign: 'center' }} // Add pointer cursor for clarity
+                                >
+                                    <div style={{ textAlign: 'center' }}>
+                                        {date.toLocaleDateString('en-US', { weekday: 'short' })}
+                                        <br />
+                                        {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    </div>
+                                </th>
                             ))}
                         </tr>
                     </thead>
@@ -465,137 +487,137 @@ const SchedulingPage = () => {
                                     
                                     return (
                                         <td
-                                        key={dayIndex}
-                                        className="time-slot"
-                                        style={{ position: 'relative', verticalAlign: 'top', height: '30px', cursor: 'pointer' }}
-                                        onClick={() => {
-                                            setNewAppointment({
-                                            title: '',
-                                            client: '',
-                                            date: dayString,
-                                            time: `${hour.toString().padStart(2, '0')}:00`,
-                                            endTime: '',
-                                            description: '',
-                                            recurrence: '',
-                                            occurrences: 1,
-                                            weekdays: [],
-                                            });
-                                            setEditingAppointment(null);
-                                            setShowAppointmentModal(true);
-                                        }}
-                                        onDragOver={(e) => e.preventDefault()} // <<< ⭐ ALLOW DROP
-                                        onDrop={(e) => handleDrop(e, dayString, hour)} // <<< ⭐ HANDLE DROP
-                                    >
-                                        {/* Render blocked slots exactly like appointments */}
-                                        {blockedEntriesAtTime.map((blocked, index) => {
-                                            const [startHour, startMinutes] = blocked.timeSlot.split('-').pop().split(':').map(Number);
-                                            const blockTop = (startMinutes / 60) * 100; // Align inside the hour
-                                            const blockHeight = blocked.duration * 100; // Each hour = 100% of the row height
-                                    
-                                            return (
+                                            key={dayIndex}
+                                            className="time-slot"
+                                            style={{ position: 'relative', verticalAlign: 'top', height: '30px', cursor: 'pointer' }}
+                                            onClick={() => {
+                                                setNewAppointment({
+                                                    title: '',
+                                                    client: '',
+                                                    date: dayString,
+                                                    time: `${hour.toString().padStart(2, '0')}:00`,
+                                                    endTime: '',
+                                                    description: '',
+                                                    recurrence: '',
+                                                    occurrences: 1,
+                                                    weekdays: [],
+                                                });
+                                                setEditingAppointment(null);
+                                                setShowAppointmentModal(true);
+                                            }}
+                                            onDragOver={(e) => e.preventDefault()} // <<< ⭐ ALLOW DROP
+                                            onDrop={(e) => handleDrop(e, dayString, hour)} // <<< ⭐ HANDLE DROP
+                                        >
+                                            {/* Render blocked slots exactly like appointments */}
+                                            {blockedEntriesAtTime.map((blocked, index) => {
+                                                const [startHour, startMinutes] = blocked.timeSlot.split('-').pop().split(':').map(Number);
+                                                const blockTop = (startMinutes / 60) * 100; // Align inside the hour
+                                                const blockHeight = blocked.duration * 100; // Each hour = 100% of the row height
+                                        
+                                                return (
+                                                    <div
+                                                        key={index}
+                                                        className="blocked-indicator"
+                                                        style={{
+                                                            position: 'absolute',
+                                                            top: `${blockTop}%`, 
+                                                            left: 0,
+                                                            right: 0,
+                                                            height: `${blockHeight}%`, 
+                                                            backgroundColor: '#d3d3d3',
+                                                            textAlign: 'center',
+                                                            fontWeight: 'bold',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                        }}
+                                                    >
+                                                        {blocked.label || "Blocked"}
+                                                    </div>
+                                                );
+                                            })}
+
+                                            {/* Render the red line for the current time */}
+                                            {currentDay === dayString && currentHour === hour && (
                                                 <div
-                                                    key={index}
-                                                    className="blocked-indicator"
                                                     style={{
                                                         position: 'absolute',
-                                                        top: `${blockTop}%`, 
+                                                        top: `${(currentMinutes / 60) * 100}%`,
                                                         left: 0,
                                                         right: 0,
-                                                        height: `${blockHeight}%`, 
-                                                        backgroundColor: '#d3d3d3',
-                                                        textAlign: 'center',
-                                                        fontWeight: 'bold',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
+                                                        height: '2px',
+                                                        backgroundColor: 'red',
+                                                        zIndex: 10,
                                                     }}
-                                                >
-                                                    {blocked.label || "Blocked"}
-                                                </div>
-                                            );
-                                        })}
+                                                />
+                                            )}
+                                            <div>
+                                                
+                                                {/* Render appointments */}
+                                                {appointmentsAtTime.map((appointment, index) => {
+                                                    const startTime = new Date(`${appointment.date}T${appointment.time}`);
+                                                    const endTime = new Date(`${appointment.date}T${appointment.end_time}`);
+                                                    const durationInMinutes = (endTime - startTime) / (1000 * 60); // Duration in minutes
+                                                    const startMinutes = startTime.getMinutes();
+                                                    const topPercentage = (startMinutes / 60) * 100; // Calculate top offset
 
-                                        {/* Render the red line for the current time */}
-                                        {currentDay === dayString && currentHour === hour && (
-                                            <div
-                                                style={{
-                                                    position: 'absolute',
-                                                    top: `${(currentMinutes / 60) * 100}%`,
-                                                    left: 0,
-                                                    right: 0,
-                                                    height: '2px',
-                                                    backgroundColor: 'red',
-                                                    zIndex: 10,
-                                                }}
-                                            />
-                                        )}
-                                        <div>
-                                            
-                                        {/* Render appointments */}
-                                        {appointmentsAtTime.map((appointment, index) => {
-                                        const startTime = new Date(`${appointment.date}T${appointment.time}`);
-                                        const endTime = new Date(`${appointment.date}T${appointment.end_time}`);
-                                        const durationInMinutes = (endTime - startTime) / (1000 * 60); // Duration in minutes
-                                        const startMinutes = startTime.getMinutes();
-                                        const topPercentage = (startMinutes / 60) * 100; // Calculate top offset
+                                                    return (
+                                                        <div
+                                                            key={appointment.id}
+                                                            className={`event appointment ${index > 0 ? 'overlapping' : ''}`}
+                                                            draggable
+                                                            onDragStart={(e) => {
+                                                                e.dataTransfer.setData('appointmentId', appointment.id);
+                                                            }}
+                                                            style={{
+                                                                position: 'absolute',
+                                                                top: `${topPercentage}%`,
+                                                                height: `${(durationInMinutes / 60) * 100}%`,
+                                                                padding: '2px',
+                                                                cursor: 'grab', // show hand cursor
+                                                            }}
+                                                        >
 
-                                        return (
-                                            <div
-                                                key={appointment.id}
-                                                className={`event appointment ${index > 0 ? 'overlapping' : ''}`}
-                                                draggable
-                                                onDragStart={(e) => {
-                                                    e.dataTransfer.setData('appointmentId', appointment.id);
-                                                }}
-                                                style={{
-                                                    position: 'absolute',
-                                                    top: `${topPercentage}%`,
-                                                    height: `${(durationInMinutes / 60) * 100}%`,
-                                                    padding: '2px',
-                                                    cursor: 'grab', // show hand cursor
-                                                }}
-                                                >
-
-                                                {clients.find((c) => c.id === appointment.client_id)?.full_name || 'Unknown'} -{' '}
-                                                {appointment.title}
-                                                <div>
-                                                    <label>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={appointment.paid}
-                                                        onClick={(e) => e.stopPropagation()} // Prevents the time popup
-                                                        onChange={() => togglePaidStatus('appointment', appointment.id, !appointment.paid)}
-                                                    />
-                                                        Completed
-                                                    </label>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                    {hour ===9 && holiday && (
-                                        <div
-                                          style={{
-                                            backgroundColor: '#ffe6e6',
-                                            color: '#990000',
-                                            fontWeight: 'bold',
-                                            textAlign: 'center',
-                                            padding: '2px',
-                                          }}
-                                        >
-                                          🎉 {holiday.name}
-                                        </div>
-                                      )}
-                                </div>  
-                           </td>
-                        );
-                    })}
-                </tr>
-            ))}
-        </tbody>
-    </table>
-</div>
-);
-};
+                                                            {clients.find((c) => c.id === appointment.client_id)?.full_name || 'Unknown'} -{' '}
+                                                            {appointment.title}
+                                                            <div>
+                                                                <label>
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={appointment.paid}
+                                                                    onClick={(e) => e.stopPropagation()} // Prevents the time popup
+                                                                    onChange={() => togglePaidStatus('appointment', appointment.id, !appointment.paid)}
+                                                                />
+                                                                    Completed
+                                                                </label>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                                {hour ===9 && holiday && (
+                                                    <div
+                                                    style={{
+                                                        backgroundColor: '#ffe6e6',
+                                                        color: '#990000',
+                                                        fontWeight: 'bold',
+                                                        textAlign: 'center',
+                                                        padding: '2px',
+                                                    }}
+                                                    >
+                                                    🎉 {holiday.name}
+                                                    </div>
+                                                )}
+                                            </div>  
+                                       </td>
+                                    );
+                                })}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        );
+    };
 
     return (
         <div>
@@ -647,6 +669,8 @@ const SchedulingPage = () => {
                             </div>
                         ))}
                 </div>
+
+                {/* Floating + button now opens options modal (like Ready Portal) */}
                 <button 
                     style={{
                         position: 'fixed',
@@ -661,10 +685,56 @@ const SchedulingPage = () => {
                         cursor: 'pointer',
                         border: 'none'
                     }}
-                    onClick={() => setShowBlockModal(true)}
+                    onClick={() => setShowPlusOptionsModal(true)}
                 >
                     +
                 </button>
+
+                {/* Plus options modal: Add Appointment / Block Time */}
+                {showPlusOptionsModal && (
+                    <div className="modal">
+                        <div className="modal-content">
+                            <h3>What would you like to do?</h3>
+                            <button
+                                onClick={() => {
+                                    setShowPlusOptionsModal(false);
+                                    setShowAppointmentModal(true);
+                                    setEditingAppointment(null);
+                                    setNewAppointment({
+                                        title: '',
+                                        client: '',
+                                        date: selectedDate.toISOString().split('T')[0],
+                                        time: '',
+                                        endTime: '',
+                                        description: '',
+                                        recurrence: '',
+                                        occurrences: 1,
+                                        weekdays: [],
+                                    });
+                                }}
+                            >
+                                ➕ Add Appointment
+                            </button>
+                            <button
+                                style={{ marginTop: '10px' }}
+                                onClick={() => {
+                                    setShowPlusOptionsModal(false);
+                                    setShowBlockModal(true);
+                                    setBlockDate(selectedDate.toISOString().split('T')[0]);
+                                }}
+                            >
+                                🚫 Block Time
+                            </button>
+                            <button
+                                style={{ marginTop: '20px', color: 'gray' }}
+                                onClick={() => setShowPlusOptionsModal(false)}
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {showBlockModal && (
                     <div className="modal">
                         <div className="modal-content">
@@ -686,10 +756,11 @@ const SchedulingPage = () => {
                         </div>
                     </div>
                 )}
+
                 {showAppointmentModal && (
                     <div className="modal">
                         <div className="modal-content">
-                        {/* Your appointment form you pasted earlier */}
+                        {/* Appointment form */}
                         <h3>{editingAppointment ? 'Edit Appointment' : 'Add Appointment'}</h3>
                         <form onSubmit={handleAddOrUpdateAppointment}>
                             <label>
