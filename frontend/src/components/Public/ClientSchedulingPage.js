@@ -7,8 +7,9 @@ import appointmentTypes from "../../data/appointmentTypes.json";
 
 const ClientSchedulingPage = () => {
   const navigate = useNavigate();
-  const apiUrl = process.env.REACT_APP_API_URL;
   const [searchParams] = useSearchParams();
+
+  const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:3001";
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedAppointmentType, setSelectedAppointmentType] = useState("");
@@ -19,7 +20,6 @@ const ClientSchedulingPage = () => {
   const [paymentMethod, setPaymentMethod] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  /** ✅ Load Client Info from URL on First Load **/
   useEffect(() => {
     const name = searchParams.get("name");
     const email = searchParams.get("email");
@@ -34,7 +34,6 @@ const ClientSchedulingPage = () => {
     if (apptType) setSelectedAppointmentType(apptType);
   }, [searchParams]);
 
-  /** ✅ Fetch Available Slots (Considering Blocked & Booked Times) **/
   const fetchAvailability = useCallback(async () => {
     if (!selectedDate || !selectedAppointmentType) return;
 
@@ -47,37 +46,35 @@ const ClientSchedulingPage = () => {
       const response = await axios.get(`${apiUrl}/availability`, {
         params: { weekday: appointmentWeekday, appointmentType: selectedAppointmentType },
       });
-      console.log("📅 Available Slots Before Filtering:", response.data);
 
       const blockedTimesRes = await axios.get(`${apiUrl}/blocked-times`, {
         params: { date: formattedDate },
       });
+
       const bookedTimesRes = await axios.get(`${apiUrl}/appointments/by-date`, {
         params: { date: formattedDate },
       });
 
-      const blockedTimes = blockedTimesRes.data.blockedTimes.map(
+      const blockedTimes = (blockedTimesRes.data.blockedTimes || []).map(
         (time) => `${formattedDate}-${time.split(":")[0]}`
       );
-      const bookedTimes = bookedTimesRes.data.map(
-        (appointment) => `${formattedDate}-${appointment.time.split(":")[0]}`
+      const bookedTimes = (bookedTimesRes.data || []).map(
+        (appointment) => `${formattedDate}-${String(appointment.time || "").split(":")[0]}`
       );
 
       const unavailableTimes = [...new Set([...blockedTimes, ...bookedTimes])];
-      console.log("🚫 Unavailable Times (Blocked + Booked):", unavailableTimes);
 
-      const formattedAvailableSlots = response.data.map((slot) => ({
+      const formattedAvailableSlots = (response.data || []).map((slot) => ({
         ...slot,
-        start_time: slot.start_time.length === 5 ? `${slot.start_time}:00` : slot.start_time,
-        end_time: slot.end_time.length === 5 ? `${slot.end_time}:00` : slot.end_time,
+        start_time: slot.start_time?.length === 5 ? `${slot.start_time}:00` : slot.start_time,
+        end_time: slot.end_time?.length === 5 ? `${slot.end_time}:00` : slot.end_time,
       }));
 
       const filteredSlots = formattedAvailableSlots.filter((slot) => {
-        const slotHour = slot.start_time.split(":")[0];
+        const slotHour = String(slot.start_time || "").split(":")[0];
         return !unavailableTimes.some((blocked) => blocked.includes(`${formattedDate}-${slotHour}`));
       });
 
-      console.log("✅ Available Slots After Filtering:", filteredSlots);
       setAvailableSlots(filteredSlots.length > 0 ? filteredSlots : []);
     } catch (error) {
       console.error("❌ Error fetching availability:", error);
@@ -85,20 +82,17 @@ const ClientSchedulingPage = () => {
     }
   }, [apiUrl, selectedDate, selectedAppointmentType]);
 
-  /** ✅ Fetch Slots Whenever Date or Type Changes **/
   useEffect(() => {
     if (selectedDate && selectedAppointmentType) {
-      console.log("🔄 Fetching availability for:", selectedDate, selectedAppointmentType);
-      setAvailableSlots([]); // clear while refreshing
+      setAvailableSlots([]);
       fetchAvailability();
     }
   }, [selectedDate, selectedAppointmentType, fetchAvailability]);
 
-  /** ✅ Format Time **/
   const formatTime = (time) => {
-    const [hours, minutes] = time.split(":");
+    const [hours, minutes] = String(time || "").split(":");
     const date = new Date();
-    date.setHours(hours, minutes);
+    date.setHours(Number(hours || 0), Number(minutes || 0));
     return new Intl.DateTimeFormat("en-US", {
       hour: "numeric",
       minute: "numeric",
@@ -106,9 +100,44 @@ const ClientSchedulingPage = () => {
     }).format(date);
   };
 
-  /** ✅ Handle Booking **/
+  // ✅ Create the appointment in DB FIRST (Ready Portal style)
+  const createPendingAppointment = async (appointmentData) => {
+    const resp = await fetch(`${apiUrl}/appointments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...appointmentData,
+        description: `${appointmentData.description}\nStatus: Pending Payment`,
+        payment_method: "Pending",
+        amount_paid: 0,
+        paid: false, // harmless if backend ignores
+      }),
+    });
+
+    if (!resp.ok && resp.status !== 200) {
+      const t = await resp.text().catch(() => "");
+      throw new Error(t || "Failed to create appointment");
+    }
+
+    const data = await resp.json().catch(() => ({}));
+
+    // Your backend sometimes returns { appointments: [...] } or { appointment: {...} } or direct obj
+    const created =
+      (Array.isArray(data?.appointments) && data.appointments[0]) ||
+      data?.appointment ||
+      data;
+
+    if (!created?.id) {
+      // Still allow flow, but we *need* id for proper paid update
+      throw new Error("Appointment created but no ID returned from /appointments.");
+    }
+
+    return created;
+  };
+
   const bookAppointment = async (slot) => {
     if (isSubmitting) return;
+
     if (!clientName || !clientEmail || !clientPhone || !selectedAppointmentType || !selectedDate) {
       alert("Please fill out all fields before booking.");
       return;
@@ -123,43 +152,52 @@ const ClientSchedulingPage = () => {
       client_email: clientEmail,
       client_phone: clientPhone,
       date: selectedDate.toISOString().split("T")[0],
-      time: slot.start_time.length === 5 ? `${slot.start_time}:00` : slot.start_time,
+      time: slot.start_time?.length === 5 ? `${slot.start_time}:00` : slot.start_time,
       end_time:
         slot.end_time && slot.end_time.length === 5 ? `${slot.end_time}:00` : (slot.end_time || null),
       description: `Client booked a ${selectedAppointmentType} appointment`,
-      payment_method: "Square",
+      // price is the base price (not gross)
+      price: Number.isFinite(basePrice) ? basePrice : 0,
     };
 
-    // 👉 If appointment is free, skip Square and go straight to success
-    if (!Number.isFinite(basePrice) || basePrice <= 0) {
-      const params = new URLSearchParams({
-        title: appointmentData.title,
-        client_name: appointmentData.client_name,
-        client_email: appointmentData.client_email,
-        client_phone: appointmentData.client_phone || "",
-        date: appointmentData.date,
-        time: appointmentData.time,
-        end_time: appointmentData.end_time || appointmentData.time, // fallback
-        price: "0",
-        amount: "0",
-      });
-      navigate(`/payment-success?${params.toString()}`);
-      return;
-    }
-
-    // Paid flow — create Square link
     try {
       setIsSubmitting(true);
+
+      // 1) Create appointment immediately (unpaid/hold)
+      const created = await createPendingAppointment(appointmentData);
+
+      // 2) If free, mark “paid” immediately and go to success
+      if (!Number.isFinite(basePrice) || basePrice <= 0) {
+        const params = new URLSearchParams({
+          appointmentId: String(created.id),
+          title: appointmentData.title,
+          client_name: appointmentData.client_name,
+          client_email: appointmentData.client_email,
+          client_phone: appointmentData.client_phone || "",
+          date: appointmentData.date,
+          time: appointmentData.time,
+          end_time: appointmentData.end_time || appointmentData.time,
+          price: "0",
+          amount: "0",
+        });
+        navigate(`/payment-success?${params.toString()}`);
+        return;
+      }
+
+      // 3) Paid: generate Square payment link
+      // IMPORTANT: include appointmentId so Success can mark it paid
       const res = await axios.post(`${apiUrl}/api/create-payment-link`, {
         email: clientEmail,
         amount: basePrice,
         itemName: selectedAppointmentType,
-        appointmentData,
+        appointmentData: { ...appointmentData, appointmentId: created.id },
+        appointmentId: created.id,
       });
+
       window.location.href = res.data.url;
     } catch (err) {
-      console.error("❌ Error generating Square payment link:", err);
-      alert("Failed to generate payment link.");
+      console.error("❌ Booking failed:", err);
+      alert("Booking failed. Please try again. (Check server logs for /appointments or payment link errors.)");
     } finally {
       setIsSubmitting(false);
     }
@@ -194,10 +232,7 @@ const ClientSchedulingPage = () => {
       />
 
       <label>Select Appointment Type:</label>
-      <select
-        value={selectedAppointmentType}
-        onChange={(e) => setSelectedAppointmentType(e.target.value)}
-      >
+      <select value={selectedAppointmentType} onChange={(e) => setSelectedAppointmentType(e.target.value)}>
         <option value="">Select Appointment Type</option>
         {appointmentTypes.map((appt) => (
           <option key={appt.title} value={appt.title}>

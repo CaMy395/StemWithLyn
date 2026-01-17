@@ -90,9 +90,28 @@ const server = http.createServer(app);
 
 // Allow requests from specific origins
 const allowedOrigins = [
-    'http://localhost:3001',
-    'http://localhost:3000'
+  'http://localhost:3001',
+  'http://localhost:3000',
+  'https://stemwithlyn.com',
+  'https://www.stemwithlyn.com',
 ];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow same-origin / server-to-server (no origin header)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    console.error("❌ Blocked by CORS:", origin);
+    return callback(new Error("Not allowed by CORS"));
+  },
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 
 app.use(cors({
     origin: allowedOrigins,
@@ -966,12 +985,33 @@ app.post('/api/create-payment-link', async (req, res) => {
   }
 
   try {
+    // Fee-inclusive amount (same logic you already had)
     const processingFee = (amount * 0.029) + 0.30;
     const adjustedAmount = Math.round((parseFloat(amount) + processingFee) * 100);
 
-    const redirectUrl = process.env.NODE_ENV === 'production'
-  ? `https://stemwithlyn.com/payment-success?title=${encodeURIComponent(appointmentData.title)}&client_name=${encodeURIComponent(appointmentData.client_name)}&client_email=${encodeURIComponent(appointmentData.client_email)}&client_phone=${encodeURIComponent(appointmentData.client_phone)}&date=${appointmentData.date}&time=${appointmentData.time}&end_time=${appointmentData.end_time}`
-  : `http://localhost:3000/payment-success?title=${encodeURIComponent(appointmentData.title)}&client_name=${encodeURIComponent(appointmentData.client_name)}&client_email=${encodeURIComponent(appointmentData.client_email)}&client_phone=${encodeURIComponent(appointmentData.client_phone)}&date=${appointmentData.date}&time=${appointmentData.time}&end_time=${appointmentData.end_time}`;
+    // ✅ Use the correct frontend base URL
+    const frontendBase =
+      process.env.NODE_ENV === 'production'
+        ? 'https://stemwithlyn.com'
+        : 'http://localhost:3000';
+
+    // ✅ Pull fields safely
+    const appt = appointmentData || {};
+    const clientPhoneSafe = appt.client_phone || "";
+
+    // ✅ IMPORTANT: include price + paymentLinkId placeholders + appointmentId if present
+    // Your Success page can now reliably create/update.
+    const redirectUrl =
+      `${frontendBase}/payment-success` +
+      `?title=${encodeURIComponent(appt.title || "")}` +
+      `&client_name=${encodeURIComponent(appt.client_name || "")}` +
+      `&client_email=${encodeURIComponent(appt.client_email || "")}` +
+      `&client_phone=${encodeURIComponent(clientPhoneSafe)}` +
+      `&date=${encodeURIComponent(appt.date || "")}` +
+      `&time=${encodeURIComponent(appt.time || "")}` +
+      `&end_time=${encodeURIComponent(appt.end_time || appt.time || "")}` +
+      `&price=${encodeURIComponent(String(amount))}` +
+      `&appointmentId=${encodeURIComponent(String(appt.appointmentId || ""))}`;
 
     const response = await checkoutApi.createPaymentLink({
       idempotencyKey: new Date().getTime().toString(),
@@ -987,13 +1027,19 @@ app.post('/api/create-payment-link', async (req, res) => {
       checkoutOptions: {
         redirectUrl,
         metadata: {
-          appointmentData: JSON.stringify(appointmentData)
-        }
-      }
+          appointmentData: JSON.stringify(appointmentData || {}),
+          // Optional but useful:
+          baseAmount: String(amount),
+          grossAmountCents: String(adjustedAmount),
+        },
+      },
     });
 
     const paymentLink = response.result.paymentLink.url;
-    res.status(200).json({ url: paymentLink });
+    const paymentLinkId = response.result.paymentLink.id;
+
+    // ✅ Return both url + id so frontend can store it if needed
+    res.status(200).json({ url: paymentLink, paymentLinkId });
   } catch (error) {
     console.error('❌ Error creating payment link:', error);
     res.status(500).json({ error: 'Failed to create payment link' });
@@ -1132,10 +1178,10 @@ app.post('/appointments', async (req, res) => {
                 [title, finalClientId, recurDate, formattedTime, formattedEndTime, description, basePrice]
             );
 
-            await createGoogleCalendarEvent(insertAppointment.rows[0], {
+            /*await createGoogleCalendarEvent(insertAppointment.rows[0], {
             email: finalClientEmail,
             full_name: finalClientName
-            });
+            });*/
 
             createdAppointments.push(insertAppointment.rows[0]);
         }
