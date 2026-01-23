@@ -92,8 +92,8 @@ const server = http.createServer(app);
 const allowedOrigins = [
   'http://localhost:3001',
   'http://localhost:3000',
-  'https://stemwithlyn.com',
-  'https://www.stemwithlyn.com',
+  'https://stemwithlyn.onrender.com',
+  'https://www.stemwithlyn.onrender.com',
 ];
 
 app.use(cors({
