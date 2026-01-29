@@ -270,31 +270,6 @@ const TutoringIntakeForm = () => {
                                 />
                     </label>
 
-
-                    {/* Which Service Would You Like to Book */}
-                    <label>
-                        Which service would you like to book? *
-                        <select
-                            name="whyHelp"
-                            value={formData.whyHelp}
-                            onChange={handleChange}
-                            required
-                        >
-                            <option value="">Select</option>
-                            {appointmentTypes
-                                .filter(type => type.category === "Tutoring")
-                                .map((type, idx) => (
-                                    <option key={idx} value={type.title}>
-                                        {type.title}
-                                    </option>
-                                ))}
-                            {/* Optional: Additional non-standard services */}
-                            <option value="Third Party Organization - (UM)">United Mentors Organization</option>
-                            <option value="Third Party Organization">Above and Beyond Learning</option>
-                        </select>
-                    </label>
-
-
                     {/* Additional Details */}
                     <label>
                         Additional Details
