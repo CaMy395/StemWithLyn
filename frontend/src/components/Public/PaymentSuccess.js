@@ -1,260 +1,261 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useSearchParams, Link } from "react-router-dom";
-
-const TZ = "America/New_York";
-
-function toLocalDate(dateStr, timeStr) {
-  if (!dateStr || !timeStr) return null;
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const [hh, mm, ss = "00"] = timeStr.split(":");
-  const dt = new Date(y, (m || 1) - 1, d || 1, Number(hh || 0), Number(mm || 0), Number(ss || 0));
-  return isNaN(dt.getTime()) ? null : dt;
-}
-
-function fmtDate(dt) {
-  if (!dt) return "";
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: TZ,
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(dt);
-}
-
-function fmtTime(dt) {
-  if (!dt) return "";
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: TZ,
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(dt);
-}
-
-function parsePriceFromTitle(title) {
-  if (typeof title !== "string") return 0;
-  const m = title.match(/\$(\d+(?:\.\d{1,2})?)/);
-  return m ? Number(m[1]) : 0;
-}
-
-function squareGrossFromBase(base) {
-  const baseCents = Math.round(Number(base || 0) * 100);
-  if (!Number.isFinite(baseCents) || baseCents <= 0) return 0;
-  const feePct = Math.round(baseCents * 0.029);
-  const feeFixed = 30;
-  const grossCents = baseCents + feePct + feeFixed;
-  return Number((grossCents / 100).toFixed(2));
-}
-
-async function safeJson(resp) {
-  try {
-    return await resp.json();
-  } catch {
-    return null;
-  }
-}
+import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 export default function PaymentSuccess() {
-  const [searchParams] = useSearchParams();
   const [status, setStatus] = useState("finalizing"); // finalizing | success | error
-  const [errorMsg, setErrorMsg] = useState("");
-  const [appointmentSummary, setAppointmentSummary] = useState(null);
-  const [debugInfo, setDebugInfo] = useState(null);
+  const [error, setError] = useState("");
+  const [appointment, setAppointment] = useState(null);
 
-  const api = process.env.REACT_APP_API_URL || "http://localhost:3001";
-
-  const qp = useMemo(() => {
-    const get = (k, def = "") => searchParams.get(k) ?? def;
-
-    return {
-      appointmentId: get("appointmentId"),
-      title: get("title"),
-      client_name: get("client_name"),
-      client_email: get("client_email"),
-      client_phone: get("client_phone"),
-      date: get("date"),
-      time: get("time"),
-      end_time: get("end_time") || get("time"),
-      price: Number(get("price") || 0),
-      paymentLinkId: get("paymentLinkId"),
-      checkoutId: get("checkoutId"),
-    };
-  }, [searchParams]);
+  const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:3001";
 
   useEffect(() => {
     const finalize = async () => {
       try {
-        const basePrice = qp.price > 0 ? qp.price : parsePriceFromTitle(qp.title);
-        const gross = squareGrossFromBase(basePrice);
+        const stored = localStorage.getItem("pendingAppointment");
+        if (!stored) throw new Error("Missing booking details. Please book again.");
 
-        const startDt = toLocalDate(qp.date, qp.time);
-        const endDt = toLocalDate(qp.date, qp.end_time);
+        const appointmentData = JSON.parse(stored);
 
-        const previewSummary = {
-          id: qp.appointmentId || null,
-          title: qp.title,
-          whenDate: fmtDate(startDt),
-          whenTimeRange: startDt && endDt ? `${fmtTime(startDt)} – ${fmtTime(endDt)} ${TZ.replace("_", " ")}` : "",
-          amountRecorded: `$${gross.toFixed(2)}`,
-        };
-
-        // ✅ If we have an appointmentId, we should UPDATE that appointment (Ready Portal flow)
-        if (qp.appointmentId) {
-          // 1) Mark paid = true (your backend already has this endpoint in admin)
-          const paidResp = await fetch(`${api}/appointments/${encodeURIComponent(qp.appointmentId)}/paid`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ paid: true }),
-          });
-
-          // 2) Also try to update amount/payment_method (if your PATCH route accepts extra fields)
-          // If backend ignores these fields, it won’t break anything.
-          const metaResp = await fetch(`${api}/appointments/${encodeURIComponent(qp.appointmentId)}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              title: qp.title,
-              description: "Paid via Square",
-              date: qp.date,
-              time: qp.time,
-              end_time: qp.end_time,
-              payment_method: "Square",
-              amount_paid: gross,
-              price: basePrice > 0 ? basePrice : 0,
-            }),
-          });
-
-          setAppointmentSummary(previewSummary);
-          setDebugInfo({
-            qp,
-            computed: { basePrice, gross },
-            paidUpdate: { ok: paidResp.ok, status: paidResp.status },
-            metaUpdate: { ok: metaResp.ok, status: metaResp.status },
-          });
-
-          // Even if metaUpdate fails, paidUpdate likely succeeded; show success.
-          if (!paidResp.ok && !metaResp.ok) {
-            const t = await paidResp.text().catch(() => "");
-            throw new Error(t || "Could not update appointment after payment.");
-          }
-
-          setStatus("success");
-          return;
-        }
-
-        // Fallback: if appointmentId is missing, do what you had before (create appointment)
-        if (!qp.title || !qp.client_name || !qp.client_email || !qp.date || !qp.time || !qp.end_time) {
-          throw new Error("Missing required appointment data in redirect URL (and no appointmentId).");
-        }
-
-        const payload = {
-          title: qp.title,
-          client_name: qp.client_name,
-          client_email: qp.client_email,
-          client_phone: qp.client_phone,
-          date: qp.date,
-          time: qp.time,
-          end_time: qp.end_time,
-          description: "Paid via Square",
-          payment_method: "Square",
-          amount_paid: gross,
-          price: basePrice > 0 ? basePrice : undefined,
-        };
-
-        const resp = await fetch(`${api}/appointments`, {
+        // ✅ Create appointment ONLY AFTER payment (logic unchanged)
+        const res = await fetch(`${apiUrl}/appointments`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            ...appointmentData,
+            paid: true,
+            amount_paid: appointmentData.price,
+          }),
         });
 
-        const data = await safeJson(resp);
-        if (!resp.ok && resp.status !== 200) {
-          throw new Error((data && JSON.stringify(data)) || "Failed to create appointment");
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(t || "Failed to create appointment.");
         }
 
-        setAppointmentSummary(previewSummary);
-        setDebugInfo({ qp, computed: { basePrice, gross }, apiResponse: data, postedPayload: payload });
+        const data = await res.json();
+        setAppointment(data.appointment || data);
+
+        localStorage.removeItem("pendingAppointment");
         setStatus("success");
       } catch (err) {
+        setError(err.message);
         setStatus("error");
-        setErrorMsg(err?.message || "Something went wrong finalizing your appointment.");
-        setDebugInfo({ qp, error: String(err) });
       }
     };
 
     finalize();
-  }, [api, qp]);
+  }, [apiUrl]);
+const formatDate = (dateStr) => {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+};
 
-  if (status === "finalizing") {
-    return (
-      <div style={{ padding: 40, textAlign: "center" }}>
-        <h2>⏳ Finalizing your appointment…</h2>
-        <p>Please don’t close this tab.</p>
-      </div>
-    );
-  }
+const formatTime = (timeStr) => {
+  if (!timeStr) return "";
+  const [h, m] = String(timeStr).split(":");
+  const d = new Date();
+  d.setHours(Number(h), Number(m || 0));
+  return d.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+};
 
-  if (status === "error") {
-    return (
-      <div style={{ padding: 40, textAlign: "center" }}>
-        <h2>❌ Something went wrong finalizing your appointment.</h2>
-        {errorMsg && <p style={{ marginTop: 8 }}>{errorMsg}</p>}
+  const container = {
+    minHeight: "70vh",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "28px 16px",
+  };
 
-        <details style={{ marginTop: 16, textAlign: "left", maxWidth: 720, marginInline: "auto" }}>
-          <summary>Debug</summary>
-          <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-            {JSON.stringify(debugInfo, null, 2)}
-          </pre>
-        </details>
+  const card = {
+    width: "100%",
+    maxWidth: 720,
+    borderRadius: 16,
+    background: "#ffffff",
+    border: "1px solid rgba(0,0,0,0.08)",
+    boxShadow: "0 10px 25px rgba(0,0,0,0.06)",
+    overflow: "hidden",
+  };
 
-        <div style={{ marginTop: 24 }}>
-          <Link to="/">Back to Portal</Link>
-        </div>
-      </div>
-    );
-  }
+  const header = (bg) => ({
+    padding: "18px 20px",
+    background: bg,
+    borderBottom: "1px solid rgba(0,0,0,0.08)",
+  });
+
+  const body = {
+    padding: "18px 20px 22px",
+  };
+
+  const title = {
+    margin: 0,
+    fontSize: 22,
+    fontWeight: 800,
+    letterSpacing: "-0.2px",
+  };
+
+  const sub = {
+    marginTop: 6,
+    marginBottom: 0,
+    opacity: 0.9,
+    fontSize: 14,
+    lineHeight: 1.4,
+  };
+
+  const row = {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    padding: "10px 0",
+    borderBottom: "1px solid rgba(0,0,0,0.06)",
+    fontSize: 14,
+  };
+
+  const label = { opacity: 0.75 };
+  const value = { fontWeight: 700, textAlign: "right" };
+
+  const btnRow = {
+    display: "flex",
+    gap: 10,
+    justifyContent: "flex-end",
+    marginTop: 16,
+    flexWrap: "wrap",
+  };
+
+  const btn = {
+    display: "inline-block",
+    padding: "10px 14px",
+    borderRadius: 10,
+    border: "1px solid rgba(0,0,0,0.12)",
+    textDecoration: "none",
+    fontWeight: 700,
+    fontSize: 14,
+  };
+
+  const primaryBtn = {
+    ...btn,
+    background: "#111827",
+    color: "#fff",
+    borderColor: "#111827",
+  };
+
+  const secondaryBtn = {
+    ...btn,
+    background: "#fff",
+    color: "#111827",
+  };
 
   return (
-    <div style={{ padding: 40, textAlign: "center" }}>
-      <h2>✅ You’re all set!</h2>
-      <p>Appointment Confirmed.</p>
-
-      <div
-        style={{
-          margin: "24px auto",
-          textAlign: "left",
-          maxWidth: 720,
-          border: "1px solid #eee",
-          borderRadius: 12,
-          padding: 16,
-        }}
-      >
-        {appointmentSummary?.id && (
-          <p>
-            <strong>Appointment ID:</strong> {appointmentSummary.id}
-          </p>
+    <div style={container}>
+      <div style={card}>
+        {/* FINALIZING */}
+        {status === "finalizing" && (
+          <>
+            <div style={header("#fff7ed")}>
+              <h2 style={title}>Finalizing your booking…</h2>
+              <p style={sub}>Please don’t close this tab while we confirm everything.</p>
+            </div>
+            <div style={body}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: 999,
+                    background: "#f59e0b",
+                  }}
+                />
+                <p style={{ margin: 0, fontSize: 14, opacity: 0.85 }}>
+                  This usually takes a few seconds.
+                </p>
+              </div>
+            </div>
+          </>
         )}
-        <p>
-          <strong>What:</strong> {appointmentSummary?.title}
-        </p>
-        <p>
-          <strong>When:</strong> {appointmentSummary?.whenDate}{" "}
-          {appointmentSummary?.whenTimeRange ? `• ${appointmentSummary.whenTimeRange}` : ""}
-        </p>
-        <p>
-          <strong>Amount recorded:</strong> {appointmentSummary?.amountRecorded}
-        </p>
-      </div>
 
-      <details style={{ marginTop: 8, textAlign: "left", maxWidth: 720, marginInline: "auto" }}>
-        <summary>Show debug</summary>
-        <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-          {JSON.stringify(debugInfo, null, 2)}
-        </pre>
-      </details>
+        {/* ERROR */}
+        {status === "error" && (
+          <>
+            <div style={header("#fef2f2")}>
+              <h2 style={title}>We hit a snag</h2>
+              <p style={sub}>Your payment may have gone through, but the booking didn’t finalize.</p>
+            </div>
+            <div style={body}>
+              <div
+                style={{
+                  background: "#fff",
+                  border: "1px solid rgba(220,38,38,0.2)",
+                  borderRadius: 12,
+                  padding: 12,
+                  color: "#991b1b",
+                  fontSize: 14,
+                  lineHeight: 1.4,
+                }}
+              >
+                {error}
+              </div>
 
-      <div style={{ marginTop: 24 }}>
-        <Link to="/">Back to Portal</Link>
+              <div style={btnRow}>
+                <Link to="/client-scheduling" style={secondaryBtn}>
+                  Back to scheduling
+                </Link>
+                <Link to="/" style={primaryBtn}>
+                  Back to portal
+                </Link>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* SUCCESS */}
+        {status === "success" && appointment && (
+          <>
+            <div style={header("#ecfdf5")}>
+              <h2 style={title}>Appointment confirmed ✅</h2>
+              <p style={sub}>You’re all set. We saved your booking and recorded your payment.</p>
+            </div>
+
+            <div style={body}>
+              <div style={row}>
+                <span style={label}>Service</span>
+                <span style={value}>{appointment.title}</span>
+              </div>
+
+              <div style={row}>
+                <span style={label}>Date</span>
+                <span style={value}>{formatDate(appointment.date)}</span>
+              </div>
+
+              <div style={row}>
+                <span style={label}>Time</span>
+                <span style={value}>{formatTime(appointment.time)}</span>
+              </div>
+
+              <div style={{ ...row, borderBottom: "none" }}>
+                <span style={label}>Payment</span>
+                <span style={value}>Received</span>
+              </div>
+
+              <div style={btnRow}>
+                <Link to="/client-scheduling" style={secondaryBtn}>
+                  Book another
+                </Link>
+                <Link to="/" style={primaryBtn}>
+                  Back to portal
+                </Link>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

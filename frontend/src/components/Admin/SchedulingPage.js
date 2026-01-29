@@ -353,37 +353,6 @@ const SchedulingPage = () => {
         );
     };
 
-    const togglePaidStatus = async (type, id, newPaidStatus) => {
-        const endpoint = `${apiUrl}/appointments/${id}/paid`;
-    
-        try {
-            let price = 0;
-            let description = '';
-    
-            if (type === 'appointment') {
-                const appointment = appointments.find((appt) => appt.id === id);
-                price = parseFloat(appointment.price || 0); // Extract price from appointment
-                description = `Appointment: ${appointment.title}`;
-            } 
-    
-            // Update the paid status in the backend
-            await axios.patch(endpoint, { paid: newPaidStatus });
-    
-            // Update local state
-            if (type === 'appointment') {
-                setAppointments((prevAppointments) =>
-                    prevAppointments.map((appt) =>
-                        appt.id === id ? { ...appt, paid: newPaidStatus } : appt
-                    )
-                );
-            }
-        } catch (error) {
-            // Only log the error if you want to debug further; otherwise, suppress it
-            if (process.env.NODE_ENV === 'development') {
-                console.error('Error updating paid status:', error);
-            }
-        }
-    };
     
     const goToPreviousWeek = () => {
         setSelectedDate((prevDate) => {
@@ -578,19 +547,8 @@ const SchedulingPage = () => {
                                                             }}
                                                         >
 
-                                                            {clients.find((c) => c.id === appointment.client_id)?.full_name || 'Unknown'} -{' '}
+{clients.find((c) => Number(c.id) === Number(appointment.client_id))?.full_name || 'Unknown'} - {appointment.title}
                                                             {appointment.title}
-                                                            <div>
-                                                                <label>
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={appointment.paid}
-                                                                    onClick={(e) => e.stopPropagation()} // Prevents the time popup
-                                                                    onChange={() => togglePaidStatus('appointment', appointment.id, !appointment.paid)}
-                                                                />
-                                                                    Completed
-                                                                </label>
-                                                            </div>
                                                         </div>
                                                     );
                                                 })}
@@ -641,10 +599,10 @@ const SchedulingPage = () => {
                         .map((appointment) => (
                             <div key={appointment.id} className="appointment-card">
                                 <strong>Title:</strong> {appointment.title} <br />
-                                <strong>Client:</strong> {clients?.length > 0 && appointment.client_id 
-                                ? clients.find(client => client.id === appointment.client_id)?.full_name || 'N/A' 
-                                : 'N/A'} <br />
-
+                                <strong>Client:</strong>{" "}
+                                {clients?.length > 0 && appointment.client_id
+                                ? (clients.find(client => Number(client.id) === Number(appointment.client_id))?.full_name || 'N/A')
+                                : 'N/A'}<br />
                                 <strong>Time:</strong> {formatTime(appointment.time)} - {formatTime(appointment.end_time)} <br />
                                 <strong>Description:</strong> {appointment.description} <br />
                                 <br></br>

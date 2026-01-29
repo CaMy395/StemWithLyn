@@ -400,7 +400,7 @@ async function checkAndSendTaskReminders() {
     }
 }
 
-// Schedule the function to run every day at 8 AM
+/* Schedule the function to run every day at 8 AM
 cron.schedule('0 9 * * *', () => {
     console.log('Checking and sending task reminders...');
     checkAndSendTaskReminders();
@@ -440,6 +440,7 @@ cron.schedule('0 8 * * *', async () => {
 }, {
     timezone: "America/New_York"
 });
+*/
 
 // // PATCH endpoint to update task completion status
 app.patch('/tasks/:id', async (req, res) => {
@@ -531,7 +532,6 @@ app.delete('/tasks/:id', async (req, res) => {
 // Save blocked times to the database
 app.post("/api/schedule/block", async (req, res) => {
     try {
-        console.log("📥 Received blockedTimes:", req.body);
         const { blockedTimes } = req.body;
 
         if (!Array.isArray(blockedTimes) || blockedTimes.length === 0) {
@@ -565,7 +565,6 @@ app.post("/api/schedule/block", async (req, res) => {
             formattedTimeSlot = `${entry.date}-${formattedTimeSlot.split(":")[0]}`;
         }
     
-        console.log("✅ Inserting Blocked Time:", formattedTimeSlot, entry.label, entry.date);
         await pool.query(query, [formattedTimeSlot, entry.label, entry.date]);
     }
     
@@ -586,12 +585,10 @@ app.get('/api/schedule/block', async (req, res) => {
         let result;
 
         if (date) {
-            console.log("📆 Fetching blocked times for date:", date);
             result = await pool.query(
                 `SELECT time_slot, label, date FROM schedule_blocks WHERE date = $1 ORDER BY time_slot`, [date]
             );
         } else {
-            console.log("📆 Fetching all blocked times...");
             result = await pool.query(
                 `SELECT time_slot, label, date FROM schedule_blocks ORDER BY date, time_slot`
             );
@@ -603,7 +600,6 @@ app.get('/api/schedule/block', async (req, res) => {
             date: row.date
         }));
 
-        console.log("✅ Blocked Times from DB:", blockedTimes);
         return res.json({ blockedTimes });
 
     } catch (error) {
@@ -977,295 +973,356 @@ const client = new Client({
 
 const checkoutApi = client.checkoutApi;
 
-app.post('/api/create-payment-link', async (req, res) => {
-  const { email, amount, itemName, appointmentData } = req.body;
 
-  if (!email || !amount || isNaN(amount)) {
+app.post('/api/finalize-payment-and-book', async (req, res) => {
+  const {
+    transactionId,
+    appointmentData
+  } = req.body;
+
+  if (!transactionId) {
+    return res.status(400).json({ error: 'Missing Square transactionId.' });
+  }
+
+  try {
+    // 1️⃣ Verify payment with Square
+    const paymentResp = await client.paymentsApi.getPayment(transactionId);
+    const payment = paymentResp?.result?.payment;
+
+    if (!payment || payment.status !== 'COMPLETED') {
+      return res.status(400).json({ error: 'Payment not completed.' });
+    }
+
+    const amountPaid =
+      Number(payment.amountMoney.amount) / 100;
+
+    // 2️⃣ Extract appointment info
+    const {
+      title,
+      client_name,
+      client_email,
+      client_phone,
+      date,
+      time,
+      end_time,
+      description
+    } = appointmentData;
+
+    if (!title || !client_name || !client_email || !date || !time) {
+      return res.status(400).json({ error: 'Incomplete appointment data.' });
+    }
+
+    const formattedTime =
+      time.length === 5 ? `${time}:00` : time;
+    const formattedEndTime =
+      end_time?.length === 5 ? `${end_time}:00` : (end_time || formattedTime);
+
+    // 3️⃣ Availability safety check
+    const booked = await pool.query(
+      `SELECT 1 FROM appointments WHERE date=$1 AND time=$2`,
+      [date, formattedTime]
+    );
+    if (booked.rowCount > 0) {
+      return res.status(409).json({ error: 'Time slot already booked.' });
+    }
+
+    await pool.query('BEGIN');
+
+    // 4️⃣ Upsert client
+    const clientRes = await pool.query(
+      `SELECT id FROM clients WHERE email=$1`,
+      [client_email]
+    );
+
+    let clientId;
+    if (clientRes.rowCount === 0) {
+      const insertClient = await pool.query(
+        `INSERT INTO clients (full_name, email, phone, payment_method)
+         VALUES ($1,$2,$3,'Square')
+         RETURNING id`,
+        [client_name, client_email, client_phone || '']
+      );
+      clientId = insertClient.rows[0].id;
+    } else {
+      clientId = clientRes.rows[0].id;
+    }
+
+    // 5️⃣ Create appointment (PAID)
+    const apptRes = await pool.query(
+      `INSERT INTO appointments
+        (title, client_id, date, time, end_time, description, price, paid)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,true)
+       RETURNING *`,
+      [title, clientId, date, formattedTime, formattedEndTime, description || '', amountPaid]
+    );
+
+    // 6️⃣ Insert profit
+    await pool.query(
+      `INSERT INTO profits
+        (category, description, amount, type, processor, processor_txn_id)
+       VALUES
+        ('Income', $1, $2, 'Tutoring Payment', 'Square', $3)`,
+      [
+        `Square Payment – ${title} (${date} ${formattedTime})`,
+        amountPaid,
+        transactionId
+      ]
+    );
+
+    await pool.query('COMMIT');
+
+    return res.json({
+      success: true,
+      appointment: apptRes.rows[0]
+    });
+
+  } catch (err) {
+    await pool.query('ROLLBACK');
+    console.error('❌ Finalize payment error:', err);
+    return res.status(500).json({ error: 'Failed to finalize payment.' });
+  }
+});
+
+app.post('/api/create-payment-link', async (req, res) => {
+  const { email, amount, itemName, appointmentData } = req.body || {};
+
+  if (!email || amount == null || isNaN(amount)) {
     return res.status(400).json({ error: 'Email and valid amount are required.' });
   }
 
   try {
-    // Fee-inclusive amount (same logic you already had)
-    const processingFee = (amount * 0.029) + 0.30;
-    const adjustedAmount = Math.round((parseFloat(amount) + processingFee) * 100);
+    const baseAmount = Number(amount);
+    const processingFee = (baseAmount * 0.029) + 0.30;
+    const grossCents = Math.round((baseAmount + processingFee) * 100);
 
-    // ✅ Use the correct frontend base URL
     const frontendBase =
       process.env.NODE_ENV === 'production'
-        ? 'https://stemwithlyn.com'
+        ? 'https://stemwithlyn.onrender.com'
         : 'http://localhost:3000';
 
-    // ✅ Pull fields safely
-    const appt = appointmentData || {};
-    const clientPhoneSafe = appt.client_phone || "";
-
-    // ✅ IMPORTANT: include price + paymentLinkId placeholders + appointmentId if present
-    // Your Success page can now reliably create/update.
+    // ✅ success page reads localStorage; these params are just a bonus for display/debug
     const redirectUrl =
       `${frontendBase}/payment-success` +
-      `?title=${encodeURIComponent(appt.title || "")}` +
-      `&client_name=${encodeURIComponent(appt.client_name || "")}` +
-      `&client_email=${encodeURIComponent(appt.client_email || "")}` +
-      `&client_phone=${encodeURIComponent(clientPhoneSafe)}` +
-      `&date=${encodeURIComponent(appt.date || "")}` +
-      `&time=${encodeURIComponent(appt.time || "")}` +
-      `&end_time=${encodeURIComponent(appt.end_time || appt.time || "")}` +
-      `&price=${encodeURIComponent(String(amount))}` +
-      `&appointmentId=${encodeURIComponent(String(appt.appointmentId || ""))}`;
+      `?email=${encodeURIComponent(email)}` +
+      `&title=${encodeURIComponent(appointmentData?.title || itemName || "Appointment")}` +
+      `&amount=${encodeURIComponent(String(baseAmount))}`;
 
     const response = await checkoutApi.createPaymentLink({
-      idempotencyKey: new Date().getTime().toString(),
+      idempotencyKey: `${Date.now()}-${crypto.randomUUID()}`,
       quickPay: {
         name: itemName || 'Payment for Services',
         description: 'Please complete your payment.',
         priceMoney: {
-          amount: adjustedAmount,
+          amount: grossCents,
           currency: 'USD',
         },
         locationId: process.env.SQUARE_LOCATION_ID,
       },
       checkoutOptions: {
         redirectUrl,
-        metadata: {
-          appointmentData: JSON.stringify(appointmentData || {}),
-          // Optional but useful:
-          baseAmount: String(amount),
-          grossAmountCents: String(adjustedAmount),
-        },
       },
     });
 
-    const paymentLink = response.result.paymentLink.url;
-    const paymentLinkId = response.result.paymentLink.id;
+    const url = response?.result?.paymentLink?.url;
 
-    // ✅ Return both url + id so frontend can store it if needed
-    res.status(200).json({ url: paymentLink, paymentLinkId });
+    if (!url) {
+      return res.status(500).json({ error: 'Failed to create payment link (missing url).' });
+    }
+
+    return res.status(200).json({ url });
   } catch (error) {
     console.error('❌ Error creating payment link:', error);
-    res.status(500).json({ error: 'Failed to create payment link' });
+    return res.status(500).json({ error: 'Failed to create payment link' });
   }
 });
 
 
 app.post('/appointments', async (req, res) => {
-    try {
-        console.log("✅ Received appointment request:", req.body);
+  try {
+    console.log("✅ Received appointment request:", req.body);
 
-        const { title, client_id, client_name, client_email, date, time, end_time, description, recurrence = '', occurrences = 1 } = req.body;
+    const {
+      title,
+      client_id,
+      client_name,
+      client_email,
+      client_phone,
+      date,
+      time,
+      end_time,
+      description,
+      addons,
 
-        let finalClientName = client_name;
-        let finalClientEmail = client_email;
+      // payment info (we will NOT store on appointments table)
+      amount_paid,
+    } = req.body;
 
-        if (client_id && (!client_name || !client_email)) {
-            const clientResult = await pool.query(`SELECT full_name, email FROM clients WHERE id = $1`, [client_id]);
-            if (clientResult.rowCount > 0) {
-                finalClientName = clientResult.rows[0].full_name;
-                finalClientEmail = clientResult.rows[0].email;
-            }
-        }
-
-        if (!title || !finalClientName || !finalClientEmail || !date || !time) {
-            console.error("❌ Missing required appointment details:", { title, client_name: finalClientName, client_email: finalClientEmail, date, time });
-            return res.status(400).json({ error: "Missing required appointment details." });
-        }
-
-        let clientResult = await pool.query(`SELECT id, payment_method FROM clients WHERE email = $1`, [client_email]);
-        let finalClientId = client_id;
-        let payment_method = req.body.payment_method;
-
-        if (clientResult.rowCount === 0) {
-            const finalClientPhone = req.body.client_phone || "";
-            const newClient = await pool.query(
-                `INSERT INTO clients (full_name, email, phone, payment_method) VALUES ($1, $2, $3, $4) RETURNING id`,
-                [finalClientName, finalClientEmail, finalClientPhone, payment_method]
-            );
-            finalClientId = newClient.rows[0].id;
-        } else {
-            finalClientId = clientResult.rows[0].id;
-        }
-
-        const isAdmin = req.body.isAdmin || false;
-        const formattedTime = time.length === 5 ? `${time}:00` : time;
-        const formattedEndTime = end_time.length === 5 ? `${end_time}:00` : end_time;
-
-        function extractPriceFromTitle(title) {
-            const match = title.match(/\$(\d+(\.\d{1,2})?)/);
-            return match ? parseFloat(match[1]) : 0;
-        }
-
-        const basePrice = extractPriceFromTitle(title);
-
-        // ⏰ Recurrence logic
-        const weekdays = req.body.weekdays || [];
-        const recurrenceDates = [];
-
-        if ((recurrence === 'weekly' || recurrence === 'biweekly') && weekdays.length > 0) {
-            const weekdayMap = {
-                Monday: 1, Tuesday: 2, Wednesday: 3,
-                Thursday: 4, Friday: 5, Saturday: 6, Sunday: 0
-            };
-
-            const startDate = new Date(date); // your selected start date
-            const startDayIndex = startDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
-
-            const weeks = parseInt(occurrences, 10); // how many weeks to repeat
-
-            for (let week = 0; week < weeks; week++) {
-                const baseWeek = new Date(startDate);
-                baseWeek.setDate(baseWeek.getDate() + (week * (recurrence === 'weekly' ? 7 : 14))); // 7 or 14 days
-
-                for (const day of weekdays) {
-                    const dayIndex = weekdayMap[day];
-                    const recurDate = new Date(baseWeek);
-                    recurDate.setDate(baseWeek.getDate() + (dayIndex - startDayIndex)); // relative to selected start
-
-                    const formatted = moment(recurDate).tz('America/New_York').format('YYYY-MM-DD'); // ✅ correct timezone
-                    recurrenceDates.push(formatted);
-                }
-            }
-
-
-        } else {
-            // Daily/monthly or single-day fallback
-            const startDate = new Date(date);
-            for (let i = 0; i < occurrences; i++) {
-                const recurDate = new Date(startDate);
-                switch (recurrence) {
-                    case 'daily':
-                        recurDate.setDate(startDate.getDate() + i);
-                        break;
-                    case 'monthly':
-                        recurDate.setMonth(startDate.getMonth() + i);
-                        break;
-                    default:
-                        if (i > 0) continue;
-                }
-                recurrenceDates.push(recurDate.toISOString().split('T')[0]);
-            }
-        }
-
-        const createdAppointments = [];
-
-        for (const recurDate of recurrenceDates) {
-            if (!isAdmin) {
-                const blockedCheck = await pool.query(
-                    `SELECT * FROM schedule_blocks WHERE date = $1 AND time_slot = $2`,
-                    [recurDate, `${formattedTime.split(":")[0]}`]
-                );
-                if (blockedCheck.rowCount > 0) continue;
-
-                const existingAppointment = await pool.query(
-                    `SELECT * FROM appointments WHERE date = $1 AND time = $2`,
-                    [recurDate, formattedTime]
-                );
-                if (existingAppointment.rowCount > 0) continue;
-
-                const appointmentWeekday = new Date(recurDate + "T12:00:00").toLocaleDateString("en-US", {
-                    weekday: "long",
-                    timeZone: "America/New_York"
-                }).trim();
-
-                const availabilityCheck = await pool.query(
-                    `SELECT * FROM weekly_availability WHERE weekday = $1 AND appointment_type ILIKE $2 AND start_time = $3`,
-                    [appointmentWeekday, `%${title}%`, formattedTime]
-                );
-                if (availabilityCheck.rowCount === 0) continue;
-            }
-
-            const insertAppointment = await pool.query(
-                `INSERT INTO appointments (title, client_id, date, time, end_time, description, price)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-                [title, finalClientId, recurDate, formattedTime, formattedEndTime, description, basePrice]
-            );
-
-            /*await createGoogleCalendarEvent(insertAppointment.rows[0], {
-            email: finalClientEmail,
-            full_name: finalClientName
-            });*/
-
-            createdAppointments.push(insertAppointment.rows[0]);
-        }
-
-        // ✅ Payment link generation (only once)
-        let paymentUrl = null;
-        if (basePrice > 0) {
-            if (payment_method === "Square") {
-                try {
-                    const apiUrl = process.env.API_URL || "http://localhost:3001";
-                    const squareResponse = await axios.post(`${apiUrl}/api/create-payment-link`, {
-                        email: finalClientEmail,
-                        amount: basePrice,
-                        description: `Payment for ${title} on ${recurrenceDates[0]} at ${time}`
-                    });
-                    paymentUrl = squareResponse.data.url;
-                } catch (error) {
-                    console.error("❌ Error generating Square link:", error);
-                }
-            } else if (payment_method === "Zelle" || payment_method === "CashApp") {
-                const encodedTitle = encodeURIComponent(title.trim());
-                paymentUrl = `${process.env.API_URL || 'http://localhost:3000'}/payment?price=${basePrice}&appointment_type=${encodedTitle}`;
-            }
-        }
-
-        // ✅ Send confirmation email
-        if (createdAppointments.length > 0) {
-            const sessionDates = createdAppointments.map(a => a.date).join(', ');
-            await sendTutoringApptEmail({
-                title,
-                email: finalClientEmail,
-                full_name: finalClientName,
-                date: createdAppointments[0].date,
-                time: createdAppointments[0].time,
-                description: `${createdAppointments.length} session(s) scheduled:\n${sessionDates}`,
-                payment_method: payment_method
-            });
-        }
-
-        res.status(201).json({
-            message: `${createdAppointments.length} appointment(s) created.`,
-            appointments: createdAppointments,
-            paymentLink: paymentUrl,
-            paymentMethod: payment_method
-        });
-
-    } catch (error) {
-        console.error("❌ Error saving appointment:", error);
-        res.status(500).json({ error: "Failed to save appointment.", details: error.message });
+    // ----------------------------
+    // Validate minimum required fields for your actual table
+    // ----------------------------
+    if (!title || !client_email || !client_name || !date || !time) {
+      return res.status(400).json({
+        error: "Missing required fields: title, client_name, client_email, date, time",
+      });
     }
-});
 
+    const formattedTime = String(time).length === 5 ? `${time}:00` : time;
+    const formattedEndTime =
+      end_time ? (String(end_time).length === 5 ? `${end_time}:00` : end_time) : null;
 
-// Get all appointments
-app.get('/appointments', async (req, res) => {
-    try {
-        const result = await pool.query('SELECT * FROM appointments ORDER BY date, time');
-        res.status(200).json(result.rows);
-    } catch (error) {
-        console.error('❌ Error fetching all appointments:', error);
-        res.status(500).json({ error: 'Internal server error' });
+    // ----------------------------
+    // Upsert client by email (since appointments needs client_id)
+    // ----------------------------
+    let finalClientId = client_id;
+
+    const clientRes = await pool.query(`SELECT id FROM clients WHERE email = $1`, [client_email]);
+
+    if (clientRes.rowCount === 0) {
+      const newClient = await pool.query(
+        `INSERT INTO clients (full_name, email, phone)
+         VALUES ($1, $2, $3)
+         RETURNING id`,
+        [client_name, client_email, client_phone || ""]
+      );
+      finalClientId = newClient.rows[0].id;
+    } else {
+      finalClientId = clientRes.rows[0].id;
     }
-});
 
-// Get filtered appointments
-app.get('/appointments/by-date', async (req, res) => {
-    try {
-        const { date } = req.query;
+    // ----------------------------
+    // Prevent double-booking (simple: same date+time)
+    // ----------------------------
+    const conflict = await pool.query(
+      `SELECT id FROM appointments WHERE date = $1 AND time = $2 LIMIT 1`,
+      [date, formattedTime]
+    );
+    if (conflict.rowCount > 0) {
+      return res.status(409).json({ error: "That time slot is already booked." });
+    }
 
-        if (!date) {
-            return res.status(400).json({ error: "Date is required to fetch appointments." });
-        }
+    // ----------------------------
+    // Compute price from request (your table has only `price`)
+    // We treat `price` as the amount paid for paid bookings.
+    // ----------------------------
+    const paidAmount = Number(amount_paid ?? 0);
+    const safePaidAmount = Number.isFinite(paidAmount) ? paidAmount : 0;
 
-        const appointments = await pool.query(
-            `SELECT * FROM appointments WHERE date = $1`, 
-            [date]
+    // If you want to support free bookings, price stays 0
+    const price = Number(req.body.price ?? safePaidAmount ?? 0) || 0;
+
+    // ----------------------------
+    // Insert appointment using ONLY existing columns
+    // ----------------------------
+    const insertRes = await pool.query(
+      `INSERT INTO appointments
+        (title, client_id, date, time, end_time, description, paid, price, addons)
+       VALUES
+        ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       RETURNING *`,
+      [
+        title,
+        finalClientId,
+        date,
+        formattedTime,
+        formattedEndTime,
+        description || "",
+        safePaidAmount > 0,             // paid boolean
+        price,                          // store amount on appointment as price
+        addons ? JSON.stringify(addons) : JSON.stringify([]),
+      ]
+    );
+
+    const appointment = insertRes.rows[0];
+
+    // ----------------------------
+    // Insert profit if paid (idempotent by appointment_id)
+    // ----------------------------
+    if (safePaidAmount > 0) {
+      const already = await pool.query(
+        `SELECT 1 FROM profits WHERE appointment_id = $1 LIMIT 1`,
+        [appointment.id]
+      );
+
+      if (already.rowCount === 0) {
+        const desc = `Tutoring Payment – ${appointment.title} (${appointment.date} ${appointment.time})`;
+
+        await pool.query(
+          `INSERT INTO profits
+            (category, description, amount, type, processor, appointment_id, paid_at)
+           VALUES
+            ($1,$2,$3,$4,$5,$6, NOW())`,
+          [
+            "Income",
+            desc,
+            safePaidAmount,
+            "Tutoring Payment",
+            "Square",
+            appointment.id,
+          ]
         );
-
-        res.json(appointments.rows);
-    } catch (error) {
-        console.error("❌ Error fetching appointments by date:", error);
-        res.status(500).json({ error: "Failed to fetch appointments." });
+      }
     }
+
+    return res.status(201).json({ appointment });
+  } catch (error) {
+    console.error("❌ Error creating appointment:", error);
+    return res.status(500).json({ error: "Failed to create appointment." });
+  }
 });
+
+
+// Get all appointments (WITH client info)
+app.get('/appointments', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        a.*,
+        c.full_name AS client_name,
+        c.email     AS client_email,
+        c.phone     AS client_phone,
+        c.category  AS client_category
+      FROM appointments a
+      LEFT JOIN clients c ON c.id = a.client_id
+      ORDER BY a.date, a.time;
+    `);
+
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('❌ Error fetching all appointments:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
+// Get filtered appointments (WITH client info)
+app.get('/appointments/by-date', async (req, res) => {
+  try {
+    const { date } = req.query;
+
+    if (!date) {
+      return res.status(400).json({ error: "Date is required to fetch appointments." });
+    }
+
+    const result = await pool.query(`
+      SELECT
+        a.*,
+        c.full_name AS client_name,
+        c.email     AS client_email,
+        c.phone     AS client_phone,
+        c.category  AS client_category
+      FROM appointments a
+      LEFT JOIN clients c ON c.id = a.client_id
+      WHERE a.date = $1
+      ORDER BY a.time;
+    `, [date]);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("❌ Error fetching appointments by date:", error);
+    res.status(500).json({ error: "Failed to fetch appointments." });
+  }
+});
+
 
 app.get('/blocked-times', async (req, res) => {
     try {
@@ -1363,6 +1420,58 @@ app.patch('/appointments/:id', async (req, res) => {
     }
 });
 
+app.patch('/appointments/:id/paid', async (req, res) => {
+  const { id } = req.params;
+  const { paid } = req.body;
+
+  try {
+    // 1) Fetch appointment
+    const apptRes = await pool.query(
+      `SELECT id, title, price, client_id, date, time, paid
+       FROM appointments
+       WHERE id = $1`,
+      [id]
+    );
+
+    if (apptRes.rowCount === 0) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+
+    const appt = apptRes.rows[0];
+    const price = Number(appt.price || 0);
+
+    // 2) Update paid flag
+    await pool.query(`UPDATE appointments SET paid = $1 WHERE id = $2`, [paid, id]);
+
+    // 3) If paid=true and price>0 → insert profit (idempotent)
+    if (paid === true && price > 0) {
+      const description = `Tutoring Payment: ${appt.title} (${appt.date} ${appt.time})`;
+
+      const exists = await pool.query(
+        `SELECT id FROM profits WHERE description = $1 LIMIT 1`,
+        [description]
+      );
+
+      if (exists.rowCount === 0) {
+        await pool.query(
+          `INSERT INTO profits (category, description, amount, type)
+           VALUES ($1, $2, $3, $4)`,
+          ['Income', description, price, 'Tutoring Payment']
+        );
+      }
+    }
+
+    return res.json({
+      message: 'Payment status updated and profits synced.',
+      appointmentId: appt.id,
+      paid: paid === true,
+    });
+  } catch (error) {
+    console.error('Error updating appointment paid status:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
 app.delete('/appointments/:id', async (req, res) => {
     const appointmentId = req.params.id;
 
@@ -1414,55 +1523,6 @@ app.delete('/appointments/:id', async (req, res) => {
     }
 });
 
-app.patch('/appointments/:id/paid', async (req, res) => {
-    const { id } = req.params;
-    const { paid } = req.body;
-
-    try {
-        // Fetch appointment details
-        const appointmentResult = await pool.query(
-            'SELECT * FROM appointments WHERE id = $1',
-            [id]
-        );
-
-        if (appointmentResult.rowCount === 0) {
-            return res.status(404).json({ error: 'Appointment not found' });
-        }
-
-        const appointment = appointmentResult.rows[0];
-        const price = appointment.price || 0;
-
-        // Fetch payment method from clients table
-        const clientResult = await pool.query(
-            'SELECT payment_method FROM clients WHERE id = $1',
-            [appointment.client_id]
-        );
-
-        if (clientResult.rowCount === 0) {
-            return res.status(404).json({ error: 'Client not found for this appointment.' });
-        }
-
-        const paymentMethod = clientResult.rows[0].payment_method || 'Other';
-
-        // Update the paid status in the appointments table
-        await pool.query('UPDATE appointments SET paid = $1 WHERE id = $2', [paid, id]);
-
-        if (paid && price > 0) {
-            // Calculate net payment based on payment method
-            let netPayment = price;
-
-            if (price > 0 && paymentMethod === 'Square') {
-                const squareFees = (price * 0.029) + 0.30; // Square fees: 2.9% + $0.30
-                netPayment -= squareFees;
-            }   
-        }
-
-        res.json({ message: 'Appointment payment status updated successfully.' });
-    } catch (error) {
-        console.error('Error updating appointment paid status:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
-    }
-});
 
 //Availability
 // Endpoint to get available time slots
@@ -1503,11 +1563,8 @@ app.get('/schedule/availability', async (req, res) => {
 
 app.get('/admin-availability', async (req, res) => {
     try {
-        console.log("📥 Fetching all availability for admin...");
-
         const result = await pool.query("SELECT * FROM weekly_availability ORDER BY weekday, start_time");
 
-        console.log("✅ Sending Admin Availability Data:", result.rows);
         res.json(result.rows);
     } catch (error) {
         console.error("❌ Error fetching admin availability:", error);
@@ -1515,35 +1572,10 @@ app.get('/admin-availability', async (req, res) => {
     }
 });
 
-app.post("/availability", async (req, res) => {
-    const { weekday, start_time, end_time, appointment_type } = req.body;
-
-    console.log("📥 Received request:", req.body); // Debugging log
-
-    if (!weekday || !start_time || !end_time || !appointment_type) {
-        return res.status(400).json({ error: "All fields are required." });
-    }
-
-    try {
-        const result = await pool.query(
-            `INSERT INTO weekly_availability (weekday, start_time, end_time, appointment_type) 
-             VALUES ($1, $2, $3, $4) RETURNING *`,
-            [weekday, start_time, end_time, appointment_type]
-        );
-
-        console.log("✅ Successfully added:", result.rows[0]); // Debugging log
-        res.status(201).json({ success: true, availability: result.rows[0] });
-    } catch (error) {
-        console.error("❌ Error adding availability:", error);
-        res.status(500).json({ error: "Failed to add availability." });
-    }
-});
 
 app.get('/availability', async (req, res) => {
     try {
         const { weekday, appointmentType } = req.query;
-
-        console.log(`📥 Fetching availability - Weekday: "${weekday}", Appointment Type: "${appointmentType}"`);
 
         const availabilityQuery = `
             SELECT * FROM weekly_availability
@@ -1553,7 +1585,6 @@ app.get('/availability', async (req, res) => {
         `;
         
         const queryParams = [weekday.trim(), appointmentType.trim()];
-        console.log("🔎 Query Params:", queryParams);
 
         const result = await pool.query(availabilityQuery, queryParams);
 
@@ -1653,18 +1684,19 @@ app.post('/api/profits', async (req, res) => {
 });
 
 app.get('/api/profits', async (req, res) => {
-    try {
-        const result = await pool.query(`
-            SELECT category, description, amount, type, created_at
-            FROM profits
-            ORDER BY created_at DESC;
-        `);
-        res.status(200).json(result.rows);
-    } catch (error) {
-        console.error('Error fetching profits data:', error);
-        res.status(500).json({ error: 'Failed to fetch profits data.' });
-    }
+  try {
+    const result = await pool.query(`
+      SELECT id, category, description, amount, type, created_at
+      FROM profits
+      ORDER BY created_at DESC;
+    `);
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Error fetching profits data:', error);
+    res.status(500).json({ error: 'Failed to fetch profits data.' });
+  }
 });
+
 
 // Helper: Calculate the correct profit amount
 function determineProfitAmount(appointment, clientCategory) {
@@ -1742,18 +1774,28 @@ app.post('/api/update-profits-for-old-payments', async (req, res) => {
   });
   
 
-// Serve static files from the React app
-app.use(express.static(path.join(__dirname, '../frontend/build')));
+// Serve static files (hashed assets can be cached long-term)
+app.use(
+  express.static(path.join(__dirname, '../frontend/build'), {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('index.html')) {
+        // ❗ NEVER cache index.html
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+      } else {
+        // ✅ Cache hashed JS/CSS forever
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    },
+  })
+);
 
-// Catch-all route to serve index.html for any unknown routes
+// React Router fallback
 app.get('*', (req, res) => {
-    console.log(`Serving index.html for route ${req.url}`);
-    res.sendFile(path.join(__dirname,  '../frontend/build', 'index.html'), (err) => {
-        if (err) {
-            res.status(500).send(err);
-        }
-    });
+  res.sendFile(path.join(__dirname, '../frontend/build', 'index.html'));
 });
+
 
 // Export app for server startup
 export default app;

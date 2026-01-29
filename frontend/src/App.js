@@ -164,7 +164,7 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
                 <Route path="/tutoring-intake" element={<TutoringIntake />} />
                 <Route path="/tech-engineering" element={<TechIntake />} />
                 <Route path="/client-scheduling" element={<ClientSchedulingPage />} />
-                <Route path="/payment" element={<Payment />} />
+                <Route path="/client-scheduling-success" element={<PaymentSuccess />} />
                 <Route path="/payment-success" element={<PaymentSuccess />} />
                 <Route path="/admin" element={userRole === 'admin' ? <AdminDashboard /> : <Navigate to="/login" />} />
                 <Route path="/user" element={userRole === 'user' ? <Dashboard /> : <Navigate to="/login" />} />
@@ -181,14 +181,6 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
     );
 };
 
-
-const container = document.getElementById('root');
-const root = createRoot(container); // Create a root
-root.render(
-    <WebSocketProvider>
-        <App />
-    </WebSocketProvider>
-);
 
 
 export default App;

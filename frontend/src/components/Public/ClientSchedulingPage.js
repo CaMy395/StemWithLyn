@@ -17,20 +17,17 @@ const ClientSchedulingPage = () => {
   const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [clientPhone, setClientPhone] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const name = searchParams.get("name");
     const email = searchParams.get("email");
     const phone = searchParams.get("phone");
-    const payment = searchParams.get("paymentMethod");
     const apptType = searchParams.get("appointmentType");
 
     if (name) setClientName(name);
     if (email) setClientEmail(email);
     if (phone) setClientPhone(phone);
-    if (payment) setPaymentMethod(payment);
     if (apptType) setSelectedAppointmentType(apptType);
   }, [searchParams]);
 
@@ -38,9 +35,7 @@ const ClientSchedulingPage = () => {
     if (!selectedDate || !selectedAppointmentType) return;
 
     const formattedDate = selectedDate.toISOString().split("T")[0];
-    const appointmentWeekday = selectedDate
-      .toLocaleDateString("en-US", { weekday: "long" })
-      .trim();
+    const appointmentWeekday = selectedDate.toLocaleDateString("en-US", { weekday: "long" }).trim();
 
     try {
       const response = await axios.get(`${apiUrl}/availability`, {
@@ -100,41 +95,6 @@ const ClientSchedulingPage = () => {
     }).format(date);
   };
 
-  // ✅ Create the appointment in DB FIRST (Ready Portal style)
-  const createPendingAppointment = async (appointmentData) => {
-    const resp = await fetch(`${apiUrl}/appointments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...appointmentData,
-        description: `${appointmentData.description}\nStatus: Pending Payment`,
-        payment_method: "Pending",
-        amount_paid: 0,
-        paid: false, // harmless if backend ignores
-      }),
-    });
-
-    if (!resp.ok && resp.status !== 200) {
-      const t = await resp.text().catch(() => "");
-      throw new Error(t || "Failed to create appointment");
-    }
-
-    const data = await resp.json().catch(() => ({}));
-
-    // Your backend sometimes returns { appointments: [...] } or { appointment: {...} } or direct obj
-    const created =
-      (Array.isArray(data?.appointments) && data.appointments[0]) ||
-      data?.appointment ||
-      data;
-
-    if (!created?.id) {
-      // Still allow flow, but we *need* id for proper paid update
-      throw new Error("Appointment created but no ID returned from /appointments.");
-    }
-
-    return created;
-  };
-
   const bookAppointment = async (slot) => {
     if (isSubmitting) return;
 
@@ -153,51 +113,39 @@ const ClientSchedulingPage = () => {
       client_phone: clientPhone,
       date: selectedDate.toISOString().split("T")[0],
       time: slot.start_time?.length === 5 ? `${slot.start_time}:00` : slot.start_time,
-      end_time:
-        slot.end_time && slot.end_time.length === 5 ? `${slot.end_time}:00` : (slot.end_time || null),
+      end_time: slot.end_time && slot.end_time.length === 5 ? `${slot.end_time}:00` : slot.end_time,
       description: `Client booked a ${selectedAppointmentType} appointment`,
-      // price is the base price (not gross)
-      price: Number.isFinite(basePrice) ? basePrice : 0,
+      price: basePrice,
     };
 
     try {
       setIsSubmitting(true);
 
-      // 1) Create appointment immediately (unpaid/hold)
-      const created = await createPendingAppointment(appointmentData);
+      // ✅ Ready Portal style: store pending appt locally; create appt ONLY on success page
+      localStorage.setItem("pendingAppointment", JSON.stringify(appointmentData));
 
-      // 2) If free, mark “paid” immediately and go to success
-      if (!Number.isFinite(basePrice) || basePrice <= 0) {
-        const params = new URLSearchParams({
-          appointmentId: String(created.id),
-          title: appointmentData.title,
-          client_name: appointmentData.client_name,
-          client_email: appointmentData.client_email,
-          client_phone: appointmentData.client_phone || "",
-          date: appointmentData.date,
-          time: appointmentData.time,
-          end_time: appointmentData.end_time || appointmentData.time,
-          price: "0",
-          amount: "0",
-        });
-        navigate(`/payment-success?${params.toString()}`);
+      // Free: go straight to success page
+      if (basePrice <= 0) {
+        navigate("/payment-success");
         return;
       }
 
-      // 3) Paid: generate Square payment link
-      // IMPORTANT: include appointmentId so Success can mark it paid
+      // Paid: get Square link and redirect
       const res = await axios.post(`${apiUrl}/api/create-payment-link`, {
         email: clientEmail,
         amount: basePrice,
         itemName: selectedAppointmentType,
-        appointmentData: { ...appointmentData, appointmentId: created.id },
-        appointmentId: created.id,
+        appointmentData,
       });
+
+      if (!res?.data?.url) {
+        throw new Error("Missing payment link URL from server.");
+      }
 
       window.location.href = res.data.url;
     } catch (err) {
       console.error("❌ Booking failed:", err);
-      alert("Booking failed. Please try again. (Check server logs for /appointments or payment link errors.)");
+      alert(err?.message || "Booking failed. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -249,14 +197,17 @@ const ClientSchedulingPage = () => {
         {availableSlots.length === 0 ? (
           <p>❌ No available slots for this date.</p>
         ) : (
-          availableSlots.map((slot) => (
-            <li key={slot.id} className="available-slot">
-              {formatTime(slot.start_time)} - {formatTime(slot.end_time)}
-              <button onClick={() => bookAppointment(slot)} disabled={isSubmitting}>
-                {isSubmitting ? "Booking…" : "Book"}
-              </button>
-            </li>
-          ))
+          availableSlots.map((slot) => {
+            const key = `${selectedDate.toISOString().split("T")[0]}-${slot.start_time}-${slot.end_time}`;
+            return (
+              <li key={key} className="available-slot">
+                {formatTime(slot.start_time)} - {formatTime(slot.end_time)}
+                <button onClick={() => bookAppointment(slot)} disabled={isSubmitting}>
+                  {isSubmitting ? "Booking…" : "Book"}
+                </button>
+              </li>
+            );
+          })
         )}
       </ul>
     </div>
