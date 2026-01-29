@@ -7,21 +7,22 @@ import appointmentTypes from '../../data/appointmentTypes.json';
 const TutoringIntakeForm = () => {
     const navigate = useNavigate(); // Initialize navigate
     const [formData, setFormData] = useState({
-        fullName: '',
-        email: '',
-        phone: '',
-        haveBooked: '',
-        whyHelp: '',
-        learnDisable: '',
-        whatDisable: '',
-        age: '',
-        grade: '',
-        subject: '',
-        mathSubject: '',
-        scienceSubject: '',
-        currentGrade: '',
-        paymentMethod: '',
-    });
+  fullName: '',
+  email: '',
+  phone: '',
+  haveBooked: '',
+  whyHelp: '',
+  learnDisable: '',
+  whatDisable: '',
+  age: '',
+  grade: '',
+  subject: '',
+  mathSubject: '',
+  scienceSubject: '',
+  currentGrade: '',
+  additionalDetails: '', // ✅ ADD
+});
+
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -33,50 +34,60 @@ const TutoringIntakeForm = () => {
     };
 
     const handleSubmit = async (e) => {
-        e.preventDefault();
-        const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3001';
-        try {
-            const response = await fetch(`${apiUrl}/api/tutoring-intake`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(formData),
-            });
+  e.preventDefault();
 
-            if (response.ok) {
-                alert('Form submitted successfully!');
-                setFormData({
-                    fullName: '',
-                    email: '',
-                    phone: '',
-                    haveBooked: '',
-                    whyHelp: '',
-                    learnDisable: '',
-                    whatDisable: '',
-                    age: '',
-                    grade: '',
-                    subject: '',
-                    mathSubject: '',
-                    scienceSubject: '',
-                    currentGrade: '',
-                    paymentMethod: '',
-                });
-            } else {
-                throw new Error('Failed to submit the form');
-            }
-            const urlParams = new URLSearchParams();
-            if (formData.fullName) urlParams.append("name", formData.fullName);
-            if (formData.email) urlParams.append("email", formData.email);
-            if (formData.phone) urlParams.append("phone", formData.phone);
-            if (formData.paymentMethod) urlParams.append("paymentMethod", formData.paymentMethod);
-            
-            navigate(`/client-scheduling?${urlParams.toString()}`);
-                    } catch (error) {
-            console.error('Error submitting form:', error);
-            alert('An error occurred while submitting the form. Please try again.');
-        }
-    };
+  // ✅ prod-safe: same-origin in production
+  const apiBase =
+    process.env.NODE_ENV === "production"
+      ? ""
+      : (process.env.REACT_APP_API_URL || "http://localhost:3001");
+
+  try {
+    const response = await fetch(`${apiBase}/api/tutoring-intake`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(formData),
+    });
+
+    if (!response.ok) {
+      const txt = await response.text();
+      console.error("Tutoring intake failed:", response.status, txt);
+      throw new Error(txt || "Failed to submit the form");
+    }
+
+    alert("Form submitted successfully!");
+
+    // Build params BEFORE reset
+    const urlParams = new URLSearchParams();
+    if (formData.fullName) urlParams.append("name", formData.fullName);
+    if (formData.email) urlParams.append("email", formData.email);
+    if (formData.phone) urlParams.append("phone", formData.phone);
+
+    // Reset
+    setFormData({
+      fullName: '',
+      email: '',
+      phone: '',
+      haveBooked: '',
+      whyHelp: '',
+      learnDisable: '',
+      whatDisable: '',
+      age: '',
+      grade: '',
+      subject: '',
+      mathSubject: '',
+      scienceSubject: '',
+      currentGrade: '',
+      additionalDetails: '', // ✅ ADD
+    });
+
+    navigate(`/client-scheduling?${urlParams.toString()}`);
+  } catch (error) {
+    console.error("Error submitting form:", error);
+    alert("An error occurred while submitting the form. Please try again.");
+  }
+};
+
 
     return (
         <div className="tutoring-intake-form">
@@ -283,22 +294,6 @@ const TutoringIntakeForm = () => {
                         </select>
                     </label>
 
-
-                    {/* Payment Method */}
-                    <label>
-                        How will you be paying? *
-                        <select
-                            name="paymentMethod"
-                            value={formData.paymentMethod} // Bind the array from state
-                            onChange={handleChange}
-                            required
-                        >
-                            <option value="">Select</option>
-                            <option value="Square">Square - Payment Link</option>
-                            <option value="Zelle">Zelle</option>
-                            <option value="Cashapp">Cashapp</option>
-                        </select>
-                    </label>
 
                     {/* Additional Details */}
                     <label>

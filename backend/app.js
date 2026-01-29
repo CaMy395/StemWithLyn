@@ -636,8 +636,82 @@ app.delete('/api/schedule/block', async (req, res) => {
     }
 });
 
+// POST /api/tutoring-intake
+// POST /api/tutoring-intake
 app.post('/api/tutoring-intake', async (req, res) => {
-    const {
+  const {
+    fullName,
+    email,
+    phone,
+    haveBooked,         // frontend sends "yes" / "no"
+    whyHelp,
+    learnDisable,
+    whatDisable,
+    age,
+    grade,
+    subject,
+    mathSubject,
+    scienceSubject,
+    currentGrade,
+    additionalDetails
+  } = req.body;
+
+  // ✅ Map yes/no -> boolean for DB column tutoring_intake_forms.have_booked (boolean)
+  const haveBookedBool =
+    haveBooked === 'yes' ? true :
+    haveBooked === 'no' ? false :
+    null;
+
+  try {
+    // Optional: keep light validation
+    if (!fullName || !email) {
+      return res.status(400).json({ error: 'Full name and email are required.' });
+    }
+
+    await pool.query(
+      `INSERT INTO tutoring_intake_forms (
+        full_name,
+        email,
+        phone,
+        have_booked,
+        why_help,
+        learn_disability,
+        what_disability,
+        age,
+        grade,
+        subject,
+        math_subject,
+        science_subject,
+        current_grade,
+        additional_details
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+      [
+        fullName,
+        email,
+        phone || null,              // ✅ phone can be null now
+        haveBookedBool,             // ✅ boolean
+
+        whyHelp || null,
+
+        // keep your conditional logic, but based on "no" path
+        haveBooked === 'no' ? (learnDisable || null) : null,
+        haveBooked === 'no' && learnDisable === 'yes' ? (whatDisable || null) : null,
+
+        haveBooked === 'no' ? (age || null) : null,
+        haveBooked === 'no' ? (grade || null) : null,
+        haveBooked === 'no' ? (subject || null) : null,
+
+        haveBooked === 'no' && subject === 'Math' ? (mathSubject || null) : null,
+        haveBooked === 'no' && subject === 'Science' ? (scienceSubject || null) : null,
+
+        currentGrade || null,
+        additionalDetails || null
+      ]
+    );
+
+    // ✅ Send email notification (don’t fail submission if email fails)
+    try {
+      await sendTutoringIntakeEmail({
         fullName,
         email,
         phone,
@@ -651,87 +725,21 @@ app.post('/api/tutoring-intake', async (req, res) => {
         mathSubject,
         scienceSubject,
         currentGrade,
-        paymentMethod,
         additionalDetails
-    } = req.body;
+      });
 
-    const clientInsertQuery = `
-        INSERT INTO clients (full_name, email, phone, payment_method)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (email) DO NOTHING;
-    `;
-
-    try {
-        // Insert client data
-        await pool.query(clientInsertQuery, [fullName, email, phone, paymentMethod]);
-
-        // Insert tutoring intake form data
-        await pool.query(
-            `INSERT INTO tutoring_intake_forms (
-                full_name,
-                email,
-                phone,
-                have_booked,
-                why_help,
-                learn_disability,
-                what_disability,
-                age,
-                grade,
-                subject,
-                math_subject,
-                science_subject,
-                current_grade,
-                additional_details
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-            [
-                fullName,
-                email,
-                phone,
-                haveBooked,
-                whyHelp,
-                haveBooked === 'no' ? learnDisable : null,
-                haveBooked === 'no' && learnDisable === 'yes' ? whatDisable : null,
-                haveBooked === 'no' ? age : null,
-                haveBooked === 'no' ? grade : null,
-                haveBooked === 'no' ? subject : null,
-                subject === 'Math' && haveBooked === 'no' ? mathSubject : null,
-                subject === 'Science' && haveBooked === 'no' ? scienceSubject : null,
-                currentGrade,
-                additionalDetails || null // Save the additional details or null if empty
-            ]
-        );
-       
-
-        // Send email notification
-        try {
-            await sendTutoringIntakeEmail({
-                fullName,
-                email,
-                phone,
-                haveBooked,
-                whyHelp,
-                learnDisable,
-                whatDisable,
-                age,
-                grade,
-                subject,
-                mathSubject,
-                scienceSubject,
-                currentGrade,
-                additionalDetails
-            });
-
-            console.log(`Tutoring intake form email sent to admin.`);
-        } catch (emailError) {
-            console.error('Error sending tutoring intake form email:', emailError.message);
-        }
-
-        res.status(201).json({ message: 'Tutoring Intake Form submitted successfully!' });
-    } catch (error) {
-        console.error('Error saving tutoring intake form submission:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
+      console.log('Tutoring intake form email sent to admin.');
+    } catch (emailError) {
+      console.error('Error sending tutoring intake form email:', emailError?.message || emailError);
     }
+
+    return res.status(201).json({ message: 'Tutoring Intake Form submitted successfully!' });
+  } catch (error) {
+    console.error('Error saving tutoring intake form submission:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
 });
+
 
 app.post('/api/tech-intake', async (req, res) => {
     const {
