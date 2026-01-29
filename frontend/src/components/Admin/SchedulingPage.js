@@ -1,6 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import Calendar from 'react-calendar';
-import 'react-calendar/dist/Calendar.css';
 import axios from 'axios';
 import '../../App.css';
 import appointmentTypes from '../../data/appointmentTypes.json';
@@ -18,10 +16,6 @@ const SchedulingPage = () => {
     const [blockLabel, setBlockLabel] = useState('');
     const [holidays, setHolidays] = useState([]);
 
-    const [isWeekView, setIsWeekView] = useState(() => {
-        // Check localStorage for the view preference, default to false (month view)
-        return localStorage.getItem('isWeekView') === 'true';
-    });
 
     // NEW: plus button options modal (Add Appointment / Block Time)
     const [showPlusOptionsModal, setShowPlusOptionsModal] = useState(false);
@@ -80,6 +74,11 @@ const SchedulingPage = () => {
       
         fetchHolidays();
       }, []);
+
+    useEffect(() => {
+    setSelectedDate(new Date());
+    }, []);
+
   
     useEffect(() => {
         const fetchData = async () => {
@@ -581,13 +580,7 @@ const SchedulingPage = () => {
         <div>
             <h2>Scheduling Page</h2>
             
-            {isWeekView ? weekView() : (
-                <Calendar
-                    onClickDay={handleDateClick}
-                    tileContent={getTileContent}
-                    value={selectedDate}
-                />
-            )}
+            {weekView()}
 
             <h3>Selected Date: {selectedDate.toDateString()}</h3>
                 <div className="week-view">
