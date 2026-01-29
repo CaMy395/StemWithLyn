@@ -109,21 +109,36 @@ const SchedulingPage = () => {
     }, [apiUrl]); // ✅ `fetchBlockedTimes` is called inside, so it's safe
     
     
-    const formatTime = (time) => {
-        // Ensure time is always in HH format (e.g., "7" → "07:00", "19" → "19:00")
-        let formattedTime = time.length === 1 ? `0${time}:00` : `${time}:00`;
-    
-        // Create a Date object for formatting
-        const date = new Date();
-        const [hours, minutes] = formattedTime.split(':');
-        date.setHours(hours, minutes);
-    
-        return new Intl.DateTimeFormat('en-US', {
-            hour: 'numeric',
-            minute: 'numeric',
-            hour12: true,
-        }).format(date);
-    };
+const formatTime = (time) => {
+  if (time == null) return "";
+
+  const s = String(time);
+
+  // If already HH:MM or HH:MM:SS, format nicely
+  if (s.includes(":")) {
+    const [hh, mm] = s.split(":");
+    const d = new Date();
+    d.setHours(Number(hh || 0), Number(mm || 0), 0, 0);
+    return new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).format(d);
+  }
+
+  // If passed "7" or 7 -> treat as 07:00
+  const hour = Number(s);
+  if (!Number.isFinite(hour)) return s;
+
+  const d = new Date();
+  d.setHours(hour, 0, 0, 0);
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(d);
+};
+
 
     const handleDateClick = (date) => setSelectedDate(date);
 

@@ -1161,12 +1161,20 @@ app.post('/appointments', async (req, res) => {
       description,
       addons,
 
-      // payment info (we will NOT store on appointments table)
+      // payment info (do NOT store on appointments table)
       amount_paid,
+
+      // recurrence (admin uses this)
+      recurrence = '',
+      occurrences = 1,
+      weekdays = [],
+
+      // admin flag
+      isAdmin = false,
     } = req.body;
 
     // ----------------------------
-    // Validate minimum required fields for your actual table
+    // Validate minimum required fields
     // ----------------------------
     if (!title || !client_email || !client_name || !date || !time) {
       return res.status(400).json({
@@ -1174,12 +1182,23 @@ app.post('/appointments', async (req, res) => {
       });
     }
 
-    const formattedTime = String(time).length === 5 ? `${time}:00` : time;
-    const formattedEndTime =
-      end_time ? (String(end_time).length === 5 ? `${end_time}:00` : end_time) : null;
+    // Normalize times for DB "time" type
+    const normalizeTime = (t) => {
+      if (t == null || t === "") return null;
+      const s = String(t);
+      if (s.length === 5) return `${s}:00`;        // HH:MM -> HH:MM:SS
+      if (s.length === 8) return s;                // HH:MM:SS
+      // If someone passes "10" or 10, treat as HH:00:00
+      const n = Number(s);
+      if (Number.isFinite(n)) return `${String(n).padStart(2, "0")}:00:00`;
+      return s;
+    };
+
+    const formattedTime = normalizeTime(time);
+    const formattedEndTime = normalizeTime(end_time);
 
     // ----------------------------
-    // Upsert client by email (since appointments needs client_id)
+    // Upsert client by email
     // ----------------------------
     let finalClientId = client_id;
 
@@ -1198,61 +1217,147 @@ app.post('/appointments', async (req, res) => {
     }
 
     // ----------------------------
-    // Prevent double-booking (simple: same date+time)
-    // ----------------------------
-    const conflict = await pool.query(
-      `SELECT id FROM appointments WHERE date = $1 AND time = $2 LIMIT 1`,
-      [date, formattedTime]
-    );
-    if (conflict.rowCount > 0) {
-      return res.status(409).json({ error: "That time slot is already booked." });
-    }
-
-    // ----------------------------
-    // Compute price from request (your table has only `price`)
-    // We treat `price` as the amount paid for paid bookings.
+    // Price / paid logic (appointments table has only paid + price)
     // ----------------------------
     const paidAmount = Number(amount_paid ?? 0);
     const safePaidAmount = Number.isFinite(paidAmount) ? paidAmount : 0;
 
-    // If you want to support free bookings, price stays 0
     const price = Number(req.body.price ?? safePaidAmount ?? 0) || 0;
+    const isPaid = safePaidAmount > 0;
 
     // ----------------------------
-    // Insert appointment using ONLY existing columns
+    // Build list of dates to create (supports admin recurrence)
     // ----------------------------
-    const insertRes = await pool.query(
-      `INSERT INTO appointments
-        (title, client_id, date, time, end_time, description, paid, price, addons)
-       VALUES
-        ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-       RETURNING *`,
-      [
-        title,
-        finalClientId,
-        date,
-        formattedTime,
-        formattedEndTime,
-        description || "",
-        safePaidAmount > 0,             // paid boolean
-        price,                          // store amount on appointment as price
-        addons ? JSON.stringify(addons) : JSON.stringify([]),
-      ]
-    );
+    const buildDates = () => {
+      const out = [];
 
-    const appointment = insertRes.rows[0];
+      // Base start date
+      const start = new Date(date + "T12:00:00"); // noon prevents timezone date shifting
+      const occ = Math.max(1, parseInt(occurrences, 10) || 1);
+
+      const weekdayMap = {
+        Sunday: 0,
+        Monday: 1,
+        Tuesday: 2,
+        Wednesday: 3,
+        Thursday: 4,
+        Friday: 5,
+        Saturday: 6,
+      };
+
+      // Weekly/Biweekly with selected weekdays
+      if ((recurrence === "weekly" || recurrence === "biweekly") && Array.isArray(weekdays) && weekdays.length > 0) {
+        const intervalDays = recurrence === "weekly" ? 7 : 14;
+
+        // We interpret "occurrences" as number of weeks
+        for (let w = 0; w < occ; w++) {
+          const weekStart = new Date(start);
+          weekStart.setDate(start.getDate() + w * intervalDays);
+
+          // For each selected weekday, compute that week's date
+          for (const wd of weekdays) {
+            const targetDow = weekdayMap[wd];
+            if (targetDow === undefined) continue;
+
+            const d = new Date(weekStart);
+            const currentDow = d.getDay();
+            const diff = targetDow - currentDow;
+            d.setDate(d.getDate() + diff);
+
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, "0");
+            const dd = String(d.getDate()).padStart(2, "0");
+            out.push(`${yyyy}-${mm}-${dd}`);
+          }
+        }
+
+        // de-dupe + sort
+        return Array.from(new Set(out)).sort();
+      }
+
+      // Monthly recurrence (occurrences months)
+      if (recurrence === "monthly") {
+        for (let i = 0; i < occ; i++) {
+          const d = new Date(start);
+          d.setMonth(start.getMonth() + i);
+
+          const yyyy = d.getFullYear();
+          const mm = String(d.getMonth() + 1).padStart(2, "0");
+          const dd = String(d.getDate()).padStart(2, "0");
+          out.push(`${yyyy}-${mm}-${dd}`);
+        }
+        return out;
+      }
+
+      // Default: single date
+      return [date];
+    };
+
+    const datesToCreate = buildDates();
 
     // ----------------------------
-    // Insert profit if paid (idempotent by appointment_id)
+    // Create appointments (skip conflicts instead of crashing)
     // ----------------------------
-    if (safePaidAmount > 0) {
+    const created = [];
+
+    for (const d of datesToCreate) {
+      // conflict check (date + time)
+      const conflict = await pool.query(
+        `SELECT id FROM appointments WHERE date = $1 AND time = $2 LIMIT 1`,
+        [d, formattedTime]
+      );
+      if (conflict.rowCount > 0) {
+        // Admin: skip; Client: treat as conflict
+        if (!isAdmin) {
+          return res.status(409).json({ error: "That time slot is already booked." });
+        }
+        continue;
+      }
+
+      const insertRes = await pool.query(
+        `INSERT INTO appointments
+          (title, client_id, date, time, end_time, description, paid, price, addons)
+         VALUES
+          ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         RETURNING *`,
+        [
+          title,
+          finalClientId,
+          d,
+          formattedTime,
+          formattedEndTime,
+          description || "",
+          // Only mark paid for paid flow; admin can create unpaid appointments
+          isAdmin ? false : isPaid,
+          // Store amount on appointment as price (for paid flow); admin can still set price if you want
+          isAdmin ? (Number(req.body.price) || 0) : price,
+          addons ? JSON.stringify(addons) : JSON.stringify([]),
+        ]
+      );
+
+      created.push(insertRes.rows[0]);
+    }
+
+    if (created.length === 0) {
+      return res.status(409).json({
+        error: "No appointment was created (all requested slots were already booked).",
+      });
+    }
+
+    // ----------------------------
+    // Profit insert ONLY for paid flow (usually client success page)
+    // Idempotent: one profit per appointment_id
+    // ----------------------------
+    if (!isAdmin && safePaidAmount > 0) {
+      const first = created[0];
+
       const already = await pool.query(
         `SELECT 1 FROM profits WHERE appointment_id = $1 LIMIT 1`,
-        [appointment.id]
+        [first.id]
       );
 
       if (already.rowCount === 0) {
-        const desc = `Tutoring Payment – ${appointment.title} (${appointment.date} ${appointment.time})`;
+        const desc = `Tutoring Payment – ${first.title} (${first.date} ${first.time})`;
 
         await pool.query(
           `INSERT INTO profits
@@ -1265,18 +1370,23 @@ app.post('/appointments', async (req, res) => {
             safePaidAmount,
             "Tutoring Payment",
             "Square",
-            appointment.id,
+            first.id,
           ]
         );
       }
     }
 
-    return res.status(201).json({ appointment });
+    // ✅ Return both shapes so ALL frontends are happy
+    return res.status(201).json({
+      appointment: created[0],
+      appointments: created,
+    });
   } catch (error) {
     console.error("❌ Error creating appointment:", error);
     return res.status(500).json({ error: "Failed to create appointment." });
   }
 });
+
 
 
 // Get all appointments (WITH client info)
