@@ -750,7 +750,6 @@ app.post('/api/tech-intake', async (req, res) => {
         platform,
         experienceLevel,
         deadline,
-        paymentMethod,
         additionalDetails,
         haveBooked
     } = req.body;
@@ -779,7 +778,6 @@ app.post('/api/tech-intake', async (req, res) => {
             platform,
             experienceLevel,
             deadline || null,
-            paymentMethod,
             additionalDetails || null,
             haveBooked === 'yes'
         ]);
@@ -828,30 +826,22 @@ app.post('/api/clients', async (req, res) => {
       // Relies on the unique index: uniq_clients_email_name_tutor
       const upsertTutoring = await pool.query(
         `
-        INSERT INTO clients (full_name, email, phone, payment_method, category)
-        VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT ON CONSTRAINT uniq_clients_email_name_tutor DO UPDATE
-          SET phone = EXCLUDED.phone,
-              payment_method = EXCLUDED.payment_method
-        RETURNING id, full_name, email, phone, payment_method, category
+        INSERT INTO clients (full_name, email, phone, category)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, full_name, email, phone, category
         `,
-        [full_name, email, phone, payment_method, category]
+        [full_name, email, phone, category]
       );
       return res.status(201).json(upsertTutoring.rows[0]);
     } else {
       // Non-tutoring: email must be unique → upsert by email
       const upsertNonTutoring = await pool.query(
         `
-        INSERT INTO clients (full_name, email, phone, payment_method, category)
-        VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT (email) DO UPDATE
-          SET full_name = EXCLUDED.full_name,
-              phone = EXCLUDED.phone,
-              payment_method = EXCLUDED.payment_method,
-              category = EXCLUDED.category
-        RETURNING id, full_name, email, phone, payment_method, category
+        INSERT INTO clients (full_name, email, phone, category)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, full_name, email, phone, category
         `,
-        [full_name, email, phone, payment_method, category]
+        [full_name, email, phone, category]
       );
       return res.status(201).json(upsertNonTutoring.rows[0]);
     }
@@ -866,7 +856,7 @@ app.post('/api/clients', async (req, res) => {
 
 app.get('/api/clients', async (req, res) => {
     try {
-        const result = await pool.query('SELECT id, full_name, email, phone, payment_method, category FROM clients ORDER BY id DESC');
+        const result = await pool.query('SELECT id, full_name, email, phone, category FROM clients ORDER BY id DESC');
         res.status(200).json(result.rows);
     } catch (error) {
         console.error('Error fetching clients:', error);

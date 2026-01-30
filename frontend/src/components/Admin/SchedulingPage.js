@@ -163,33 +163,37 @@ const formatTime = (time) => {
             occurrences = 1,
             weekdays = []
         } = newAppointment;
-    
+    const safeTime = time ? String(time) : "";
+const safeEndTime = endTime ? String(endTime) : "";
+
         const baseAppointment = {
-            title,
-            client_id: clientId,
-            client_name: selectedClient.full_name || 'Unknown',
-            client_email: selectedClient.email || 'Unknown',
-            time,
-            end_time: endTime,
-            description,
-            isAdmin: true,
-            recurrence,
-            occurrences,
-            weekdays,
-            date,
-        };
+  title,
+  client_id: clientId,
+  client_name: selectedClient.full_name || 'Unknown',
+  client_email: selectedClient.email || 'Unknown',
+  time: safeTime,
+  end_time: safeEndTime,
+  description,
+  isAdmin: true,
+  recurrence,
+  occurrences,
+  weekdays,
+  date,
+};
+
     
         try {
             if (editingAppointment) {
                 // PATCH existing appointment
                 const patchBody = {
-                    title,
-                    description,
-                    date,
-                    time,
-                    end_time: endTime,
-                    client_id: clientId
-                };
+  title,
+  description,
+  date,
+  time: safeTime,
+  end_time: safeEndTime,
+  client_id: clientId
+};
+
     
                 const response = await axios.patch(`${apiUrl}/appointments/${editingAppointment.id}`, patchBody);
                 alert(`✅ Appointment updated successfully!`);

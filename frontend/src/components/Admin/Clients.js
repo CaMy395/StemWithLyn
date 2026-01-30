@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 const Clients = () => {
     const [clients, setClients] = useState([]);
     const [showForm, setShowForm] = useState(false);
-    const [newClient, setNewClient] = useState({ full_name: '', email: '', phone: '', payment_method: '', category: 'StemwithLyn'});
+    const [newClient, setNewClient] = useState({ full_name: '', email: '', phone: '', category: 'StemwithLyn'});
     const [editClient, setEditClient] = useState(null);
 
     const fetchClients = async () => {
@@ -35,7 +35,6 @@ const Clients = () => {
             full_name: newClient.full_name,
             email: newClient.email,
             phone: newClient.phone,
-            payment_method: newClient.payment_method,
             category: newClient.category || "StemwithLyn", // Default category
         };
     
@@ -64,7 +63,7 @@ const Clients = () => {
             console.log(`✅ Client ${isEditing ? "updated" : "added"} successfully!`);
             fetchClients(); // Refresh the client list
             setShowForm(false);
-            setNewClient({ full_name: "", email: "", phone: "", payment_method: "", category: "StemwithLyn" });
+            setNewClient({ full_name: "", email: "", phone: "", category: "StemwithLyn" });
             setEditClient(null);
         } catch (error) {
             console.error(`❌ Error ${isEditing ? "updating" : "adding"} client:`, error);
@@ -102,7 +101,7 @@ const Clients = () => {
         <div className="userlist-container">
             <h1>Clients</h1>
             <button onClick={() => {
-                setNewClient({ full_name: '', email: '', phone: '', payment_method: '' });
+                setNewClient({ full_name: '', email: '', phone: '' });
                 setShowForm(!showForm);
                 setEditClient(null);
             }}>
@@ -121,14 +120,6 @@ const Clients = () => {
                         </label>
                         <label>Phone:
                             <input type="tel" name="phone" value={newClient.phone} onChange={handleChange} />
-                        </label>
-                        <label>Payment Method:
-                            <select name="payment_method" value={newClient.payment_method} onChange={handleChange} required>
-                                <option value="">Select</option>
-                                <option value="Square">Square - Payment Link</option>
-                                <option value="Zelle">Zelle</option>
-                                <option value="Cashapp">Cashapp</option>
-                            </select>
                         </label>
                         <label>Category:</label>
                             <select name="category" value={newClient.category} onChange={handleChange} required>
@@ -149,7 +140,6 @@ const Clients = () => {
                             <th>Full Name</th>
                             <th>Email</th>
                             <th>Phone</th>
-                            <th>Payment Method</th>
                             <th>Category</th>
                             <th>Actions</th>
                         </tr>
@@ -160,7 +150,6 @@ const Clients = () => {
                                 <td>{client.full_name}</td>
                                 <td>{client.email}</td>
                                 <td>{client.phone}</td>
-                                <td>{client.payment_method}</td>
                                 <td>{client.category}</td>
                                 <td>
                                     <button onClick={() => handleEdit(client)}>Edit</button>
