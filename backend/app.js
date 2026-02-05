@@ -9,10 +9,7 @@ import { fileURLToPath } from 'url'; // Required for ES module __dirname
 import bcrypt from 'bcrypt';
 import pool from './db.js'; // Import the centralized pool connection
 import axios from "axios"; // ✅ Import axios
-import {
-    sendPaymentEmail, sendAppointmentReminderEmail , sendRegistrationEmail,sendResetEmail, sendTutoringIntakeEmail, sendTutoringApptEmail, sendTutoringRescheduleEmail,sendCancellationEmail, sendTextMessage, sendTaskTextMessage,  sendMentorSessionLogEmail, sendEmailCampaign
-} from './emailService.js';
-import cron from 'node-cron';
+import {sendPortalInviteEmail, sendRegistrationEmail,sendResetEmail, sendTutoringIntakeEmail, sendTutoringApptEmail, sendTutoringRescheduleEmail,sendCancellationEmail, sendTextMessage,  sendMentorSessionLogEmail} from './emailService.js';
 import 'dotenv/config';
 import {WebSocketServer} from 'ws';
 import http from 'http';
@@ -92,41 +89,33 @@ const server = http.createServer(app);
 const allowedOrigins = [
   'http://localhost:3001',
   'http://localhost:3000',
+  'http://127.0.0.1:3000',
   'https://stemwithlyn.onrender.com',
   'https://www.stemwithlyn.onrender.com',
 ];
 
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow same-origin / server-to-server (no origin header)
-    if (!origin) return callback(null, true);
-
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
-    console.error("❌ Blocked by CORS:", origin);
-    return callback(new Error("Not allowed by CORS"));
-  },
-  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-  credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
-
-app.use(cors({
-    origin: allowedOrigins,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // allow requests with no origin (like Postman) and allow known origins
+      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error("Not allowed by CORS"));
+    },
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-user-id",
+      "x-username",
+    ],
+    exposedHeaders: ["Content-Type"],
+  })
+);
 
-app.options('*', (req, res) => {
-    res.header('Access-Control-Allow-Origin', req.headers.origin);
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.sendStatus(200);
-});
+// IMPORTANT: respond to preflight
+app.options("*", cors());
+
 
 // Attach WebSocket server to the same HTTP server
 const wss = new WebSocketServer({ server });
@@ -176,42 +165,111 @@ pool.on('connect', async (client) => {
 
 // POST endpoint for registration
 app.post('/register', async (req, res) => {
-    const { name, username, email, phone, password, role = 'user' } = req.body;
+  // Everyone is a "user". user_type controls student vs tech-client.
+  const { name, username, email, phone, password, user_type } = req.body;
 
-    try {
-        // Check if the username or email already exists
-        const existingUser = await pool.query(
-            'SELECT * FROM users WHERE username = $1 OR email = $2',
-            [username, email]
-        );
+  // ✅ Force role
+  const role = 'user';
 
-        if (existingUser.rowCount > 0) {
-            return res.status(400).json({ error: 'Username or email already exists' });
-        }
+  // ✅ Validate user_type
+  const normalizedUserType = user_type ? String(user_type).toLowerCase().trim() : null;
+  const allowedUserTypes = new Set(['student', 'client', null]);
+  if (!allowedUserTypes.has(normalizedUserType)) {
+    return res.status(400).json({ error: "Invalid user_type. Use 'student' or 'client'." });
+  }
 
-        // Hash the password
-        const hashedPassword = await bcrypt.hash(password, 10);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
 
-        // Correct SQL Query: Remove extra placeholders ($7, $8, $9)
-        const newUser = await pool.query(
-            'INSERT INTO users (name, username, email, phone, password, role) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-            [name, username, email, phone, hashedPassword, role]
-        );
+    // Check if the username or email already exists
+    const existingUser = await client.query(
+      'SELECT id FROM users WHERE username = $1 OR lower(email) = lower($2) LIMIT 1',
+      [username, email]
+    );
 
-        // Send registration email
-        try {
-            await sendRegistrationEmail(email, username, name);
-            console.log(`Welcome email sent to ${email}`);
-        } catch (emailError) {
-            console.error('Error sending registration email:', emailError.message);
-        }
-
-        res.status(201).json(newUser.rows[0]);
-    } catch (error) {
-        console.error('Error during registration:', error);
-        res.status(500).json({ error: 'Internal server error' });
+    if (existingUser.rowCount > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Username or email already exists' });
     }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Insert user (✅ role forced to 'user', ✅ store user_type)
+    const newUserRes = await client.query(
+      `INSERT INTO users (name, username, email, phone, password, role, user_type)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, name, username, email, phone, role, user_type, created_at`,
+      [name, username, email, phone || null, hashedPassword, role, normalizedUserType]
+    );
+
+    const newUser = newUserRes.rows[0];
+
+    // ✅ If they registered as a STUDENT, ensure there is a linked clients row
+    // This is what prevents "Client profile not linked yet" in tutoring portal.
+    if (normalizedUserType === 'student') {
+      // Try to find existing StemwithLyn client record by email
+      const existingClient = await client.query(
+        `SELECT id, user_id
+           FROM clients
+          WHERE category = 'StemwithLyn'
+            AND email IS NOT NULL
+            AND lower(email) = lower($1)
+          ORDER BY id DESC
+          LIMIT 1`,
+        [email]
+      );
+
+      if (existingClient.rowCount > 0) {
+        const c = existingClient.rows[0];
+
+        // If already linked to someone else, don't overwrite
+        if (c.user_id && Number(c.user_id) !== Number(newUser.id)) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({
+            error: "This email is already linked to another student portal account. Please contact support.",
+          });
+        }
+
+        await client.query(
+          `UPDATE clients
+              SET user_id = $1,
+                  full_name = COALESCE(full_name, $2),
+                  phone = COALESCE(phone, $3)
+            WHERE id = $4`,
+          [newUser.id, name, phone || null, c.id]
+        );
+      } else {
+        // Create a new client row linked to this user
+        await client.query(
+          `INSERT INTO clients (full_name, email, phone, category, user_id)
+           VALUES ($1, $2, $3, 'StemwithLyn', $4)`,
+          [name, email, phone || null, newUser.id]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+
+    // Send registration email (outside transaction is OK)
+    try {
+      await sendRegistrationEmail(email, username, name);
+      console.log(`Welcome email sent to ${email}`);
+    } catch (emailError) {
+      console.error('Error sending registration email:', emailError.message);
+    }
+
+    return res.status(201).json(newUser);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error during registration:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
 });
+
 
 app.post('/login', async (req, res) => {
     console.log('Login request received:', req.body); // Log the request body
@@ -235,7 +293,15 @@ app.post('/login', async (req, res) => {
             return res.status(401).send('Invalid password');
         }
 
-        res.status(200).json({ role: user.role });
+
+      return res.status(200).json({
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+      });
+
     } catch (error) {
         console.error('Error during login:', error);
         res.status(500).send('Internal server error');
@@ -288,7 +354,7 @@ app.post('/reset-password', async (req, res) => {
     res.status(200).send('Password updated successfully');
 });
 
-// Example route for getting users
+// Route for getting users
 app.get('/users', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM users'); // Adjust the query as necessary
@@ -299,8 +365,565 @@ app.get('/users', async (req, res) => {
     }
 });
 
+/* ============================
+   CLIENT PORTAL / INVITES
+   ============================ */
 
-// Example POST route for creating a task
+// ✅ Client Portal Auth Helper
+async function requireClientUser(req) {
+  try {
+    const userIdRaw = req.headers["x-user-id"];
+    const usernameRaw = req.headers["x-username"];
+
+    let user = null;
+
+    if (userIdRaw) {
+      const id = Number(userIdRaw);
+      if (!Number.isFinite(id)) {
+        return { ok: false, status: 401, error: "Invalid user id." };
+      }
+
+      const u = await pool.query(
+        "SELECT id, name, username, email, phone, role FROM users WHERE id = $1 LIMIT 1",
+        [id]
+      );
+      user = u.rows[0] || null;
+    } else if (usernameRaw) {
+      const u = await pool.query(
+        "SELECT id, name, username, email, phone, role FROM users WHERE username = $1 LIMIT 1",
+        [String(usernameRaw)]
+      );
+      user = u.rows[0] || null;
+    }
+
+    if (!user) return { ok: false, status: 401, error: "Not authenticated." };
+
+    // ✅ Only block admins
+    if (user.role === "admin") {
+      return { ok: false, status: 403, error: "Admins do not use the client portal." };
+    }
+
+    return { ok: true, user };
+  } catch (err) {
+    console.error("❌ requireClientUser error:", err);
+    return { ok: false, status: 500, error: "Auth error." };
+  }
+}
+
+// helper: make a username from a name + id fallback
+function makeUsernameFromName(fullName, fallbackId) {
+  const base = String(fullName || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "")
+    .slice(0, 22);
+
+  return base ? `${base}` : `client_${fallbackId || Date.now()}`;
+}
+
+// helper: require a logged-in user from headers (simple, matches your current style)
+// Frontend will send: x-user-id and x-username (stored after login)
+async function requireLoggedInUser(req) {
+  const userId = Number(req.headers["x-user-id"]);
+  const username = String(req.headers["x-username"] || "").trim();
+
+  if (!userId || !username) {
+    return { ok: false, status: 401, error: "Not logged in." };
+  }
+
+  const u = await pool.query(
+    "SELECT id, username, email, role, name, phone FROM users WHERE id = $1 AND username = $2 LIMIT 1",
+    [userId, username]
+  );
+
+  if (u.rowCount === 0) {
+    return { ok: false, status: 401, error: "Invalid session." };
+  }
+
+  const user = u.rows[0];
+
+  // only you are admin
+  if (user.role === "admin") {
+    return { ok: false, status: 403, error: "Admins do not use the client portal." };
+  }
+
+  return { ok: true, user };
+}
+
+
+/**
+ * ADMIN: Invite an existing client to create a portal login
+ * POST /admin/clients/:clientId/invite-login
+ * body: { }  (optional: { force: true })
+ *
+ * - Creates a users row with role=client (if missing)
+ * - Links clients.user_id
+ * - Generates reset_token and emails reset link (uses your existing reset flow)
+ */
+app.post("/admin/clients/:clientId/invite-login", async (req, res) => {
+  const { clientId } = req.params;
+  const force = Boolean(req.body?.force);
+
+  try {
+    const cRes = await pool.query(
+      "SELECT id, full_name, email, user_id FROM clients WHERE id = $1 LIMIT 1",
+      [clientId]
+    );
+
+    if (cRes.rowCount === 0) return res.status(404).json({ error: "Client not found." });
+
+    const clientRow = cRes.rows[0];
+    if (!clientRow.email) {
+      return res.status(400).json({ error: "Client has no email on file." });
+    }
+
+    // If already linked to a user and not forcing, re-send invite
+    let userId = clientRow.user_id;
+
+    if (!userId || force) {
+      // Check if a user already exists by email
+      const existingU = await pool.query(
+        "SELECT id, username FROM users WHERE lower(email) = lower($1) LIMIT 1",
+        [clientRow.email]
+      );
+
+      if (existingU.rowCount > 0 && !force) {
+        // If user exists but client not linked, link it
+        userId = existingU.rows[0].id;
+        await pool.query("UPDATE clients SET user_id = $1 WHERE id = $2", [userId, clientRow.id]);
+      } else if (existingU.rowCount > 0 && force) {
+        userId = existingU.rows[0].id;
+        // keep linkage correct
+        await pool.query("UPDATE clients SET user_id = $1 WHERE id = $2", [userId, clientRow.id]);
+      } else {
+        // Create a new client user with a random temp password (never emailed)
+        const tempPassword = crypto.randomBytes(12).toString("hex");
+        const hashed = await bcrypt.hash(tempPassword, 10);
+
+        // Generate a unique username
+        let username = makeUsernameFromName(clientRow.full_name, clientRow.id);
+        let attempt = 0;
+
+        // Ensure username is unique
+        while (attempt < 5) {
+          const chk = await pool.query("SELECT 1 FROM users WHERE username = $1 LIMIT 1", [username]);
+          if (chk.rowCount === 0) break;
+          attempt += 1;
+          username = `${makeUsernameFromName(clientRow.full_name, clientRow.id)}${attempt}`;
+        }
+
+        const newU = await pool.query(
+          `INSERT INTO users (name, username, email, phone, password, role)
+           VALUES ($1,$2,$3,$4,$5,'client')
+           RETURNING id, username, email`,
+          [clientRow.full_name, username, clientRow.email, null, hashed]
+        );
+
+        userId = newU.rows[0].id;
+        await pool.query("UPDATE clients SET user_id = $1 WHERE id = $2", [userId, clientRow.id]);
+      }
+    }
+
+    // Create a reset token as the "invite" link
+    const resetToken = crypto.randomBytes(20).toString("hex");
+    const expiration = Date.now() + 1000 * 60 * 60 * 24 * 7; // 7 days
+
+    await pool.query(
+      "UPDATE users SET reset_token = $1, reset_token_expiry = $2 WHERE id = $3",
+      [resetToken, expiration, userId]
+    );
+
+    // Send invite using your existing reset email function
+    const frontendUrl = process.env.NODE_ENV === "production"
+      ? "https://stemwithlyn.onrender.com"
+      : "http://localhost:3000";
+
+    const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
+
+    await sendResetEmail(clientRow.email, resetLink);
+
+    // Also send them their username (no password)
+    const uRes = await pool.query("SELECT username FROM users WHERE id = $1 LIMIT 1", [userId]);
+    const username = uRes.rows[0]?.username;
+
+    return res.json({
+      success: true,
+      message: "Invite sent.",
+      clientId: clientRow.id,
+      username,
+      email: clientRow.email,
+    });
+  } catch (err) {
+    console.error("❌ invite-login error:", err);
+    return res.status(500).json({ error: "Failed to send invite." });
+  }
+});
+
+/**
+ * CLIENT: Get my client profile
+ * GET /client/me
+ */
+/**
+ * CLIENT: Get my client profile
+ * GET /client/me
+ */
+app.get("/client/me", async (req, res) => {
+  try {
+    const auth = await requireClientUser(req); // your helper
+    if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+
+    const { user } = auth;
+
+    // 1) Try linked by user_id
+    let cRes = await pool.query(
+      `SELECT id, full_name, email, phone, category, user_id
+         FROM clients
+        WHERE user_id = $1
+        LIMIT 1`,
+      [user.id]
+    );
+
+    // 2) Try match by email (case-insensitive)
+    if (cRes.rowCount === 0 && user.email) {
+      const match = await pool.query(
+        `SELECT id, full_name, email, phone, category, user_id
+           FROM clients
+          WHERE email IS NOT NULL
+            AND lower(email) = lower($1)
+          ORDER BY id DESC
+          LIMIT 1`,
+        [user.email]
+      );
+
+      if (match.rowCount > 0) {
+        const row = match.rows[0];
+
+        // already linked to someone else?
+        if (row.user_id && Number(row.user_id) !== Number(user.id)) {
+          return res.status(409).json({
+            error: "This email is already linked to another portal account. Please contact support.",
+          });
+        }
+
+        // link it
+        await pool.query(`UPDATE clients SET user_id = $1 WHERE id = $2`, [user.id, row.id]);
+
+        cRes = await pool.query(
+          `SELECT id, full_name, email, phone, category, user_id
+             FROM clients
+            WHERE user_id = $1
+            LIMIT 1`,
+          [user.id]
+        );
+      }
+    }
+
+    // 3) Still nothing? AUTO-CREATE the client profile from the user record
+    if (cRes.rowCount === 0) {
+      const created = await pool.query(
+        `INSERT INTO clients (full_name, email, phone, category, user_id)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, full_name, email, phone, category, user_id`,
+        [
+          user.name || user.username || "Client",
+          user.email || null,
+          user.phone || null,
+          "StemwithLyn",
+          user.id,
+        ]
+      );
+
+      cRes = { rowCount: 1, rows: [created.rows[0]] };
+    }
+
+    return res.json({
+      user: { id: user.id, name: user.name, username: user.username, email: user.email, role: user.role },
+      client: cRes.rows[0],
+    });
+  } catch (err) {
+    console.error("❌ /client/me error:", err);
+    return res.status(500).json({ error: "Failed to load client profile." });
+  }
+});
+
+
+app.post("/admin/clients/:clientId/create-login", async (req, res) => {
+  const { clientId } = req.params;
+
+  const db = await pool.connect();
+  try {
+    await db.query("BEGIN");
+
+    // 1) Load client
+    const cRes = await db.query(
+      `SELECT id, full_name, email, phone, user_id
+         FROM clients
+        WHERE id = $1
+        LIMIT 1`,
+      [clientId]
+    );
+
+    if (cRes.rowCount === 0) {
+      await db.query("ROLLBACK");
+      return res.status(404).json({ error: "Client not found." });
+    }
+
+    const c = cRes.rows[0];
+
+    if (!c.email) {
+      await db.query("ROLLBACK");
+      return res.status(400).json({ error: "Client must have an email to create a login." });
+    }
+
+    if (c.user_id) {
+      // Already linked → still allow resend invite
+      await db.query("COMMIT");
+
+      // ✅ Send portal invite anyway (resend)
+      try {
+        await sendPortalInviteEmail(c.email, c.full_name);
+      } catch (e) {
+        console.error("❌ Portal invite send failed:", e.message);
+      }
+
+      return res.json({ success: true, alreadyLinked: true });
+    }
+
+    // 2) If a user already exists with this email, link it
+    const existingUser = await db.query(
+      `SELECT id, username, email, role
+         FROM users
+        WHERE lower(email) = lower($1)
+        LIMIT 1`,
+      [c.email]
+    );
+
+    let userRow = null;
+    let createdNewUser = false;
+
+    if (existingUser.rowCount > 0) {
+      userRow = existingUser.rows[0];
+
+      // don't link to admin
+      if (userRow.role === "admin") {
+        await db.query("ROLLBACK");
+        return res.status(409).json({ error: "That email belongs to an admin account." });
+      }
+
+      await db.query(`UPDATE clients SET user_id = $1 WHERE id = $2`, [userRow.id, c.id]);
+    } else {
+      // 3) Create new user with a random username + temp password
+      const base = String(c.email)
+        .split("@")[0]
+        .toLowerCase()
+        .replace(/[^a-z0-9_]/g, "")
+        .slice(0, 16);
+
+      const suffix = Math.floor(100 + Math.random() * 900);
+      const username = `${base}${suffix}`;
+
+      const tempPassword = Math.random().toString(36).slice(-10) + "A1!";
+      const hashed = await bcrypt.hash(tempPassword, 10);
+
+      const uRes = await db.query(
+        `INSERT INTO users (name, username, email, phone, password, role)
+         VALUES ($1, $2, $3, $4, $5, 'user')
+         RETURNING id, username, email, role`,
+        [c.full_name, username, c.email, c.phone || null, hashed]
+      );
+
+      userRow = uRes.rows[0];
+      createdNewUser = true;
+
+      await db.query(`UPDATE clients SET user_id = $1 WHERE id = $2`, [userRow.id, c.id]);
+
+      // NOTE: We do NOT email the temp password.
+      // We email a portal invite telling them to set password via "Forgot Password".
+    }
+
+    await db.query("COMMIT");
+
+    // ✅ 4) Always send portal invite email (works for existing users too)
+    try {
+      await sendPortalInviteEmail(c.email, c.full_name);
+    } catch (e) {
+      console.error("❌ Portal invite send failed:", e.message);
+      // We still return success because account linking happened
+    }
+
+    return res.json({
+      success: true,
+      createdNewUser,
+      user: userRow,
+    });
+  } catch (err) {
+    await db.query("ROLLBACK");
+    console.error("❌ create-login error:", err);
+    return res.status(500).json({ error: "Failed to create login." });
+  } finally {
+    db.release();
+  }
+});
+
+
+/**
+ * CLIENT: My appointments (history + upcoming)
+ * GET /client/appointments
+ */
+app.get("/client/appointments", async (req, res) => {
+  try {
+    const auth = await requireClientUser(req);
+    if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+    const { user } = auth;
+
+    const cRes = await pool.query("SELECT id FROM clients WHERE user_id = $1 LIMIT 1", [user.id]);
+    if (cRes.rowCount === 0) return res.status(404).json({ error: "Client not linked." });
+
+    const clientId = cRes.rows[0].id;
+
+    const appts = await pool.query(
+      `SELECT a.*
+       FROM appointments a
+       WHERE a.client_id = $1
+       ORDER BY a.date DESC, a.time DESC`,
+      [clientId]
+    );
+
+    return res.json(appts.rows);
+  } catch (err) {
+    console.error("❌ /client/appointments error:", err);
+    return res.status(500).json({ error: "Failed to load appointments." });
+  }
+});
+
+/**
+ * CLIENT: Cancel appointment (only once)
+ * POST /client/appointments/:id/cancel
+ */
+app.post("/client/appointments/:id/cancel", async (req, res) => {
+  try {
+    const auth = await requireClientUser(req);
+    if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+    const { user } = auth;
+
+    const cRes = await pool.query("SELECT id FROM clients WHERE user_id = $1 LIMIT 1", [user.id]);
+    if (cRes.rowCount === 0) return res.status(404).json({ error: "Client not linked." });
+    const clientId = cRes.rows[0].id;
+
+    const { id } = req.params;
+
+    const apptRes = await pool.query(
+      `SELECT * FROM appointments WHERE id = $1 AND client_id = $2 LIMIT 1`,
+      [id, clientId]
+    );
+
+    if (apptRes.rowCount === 0) return res.status(404).json({ error: "Appointment not found." });
+
+    const appt = apptRes.rows[0];
+    if ((appt.client_cancel_count || 0) >= 1) {
+      return res.status(403).json({ error: "Cancel limit reached. Please contact us." });
+    }
+
+    // increment cancel count + delete (matches your current cancel pattern)
+    await pool.query("UPDATE appointments SET client_cancel_count = client_cancel_count + 1 WHERE id = $1", [id]);
+    await pool.query("DELETE FROM appointments WHERE id = $1", [id]);
+
+    // Email cancellation using your existing helper
+    const clientRow = await pool.query("SELECT email, full_name FROM clients WHERE id = $1", [clientId]);
+    if (clientRow.rowCount > 0) {
+      await sendCancellationEmail({
+        title: appt.title,
+        email: clientRow.rows[0].email,
+        full_name: clientRow.rows[0].full_name,
+        date: appt.date,
+        time: appt.time,
+        description: appt.description,
+      });
+    }
+
+    return res.json({ success: true, message: "Appointment cancelled." });
+  } catch (err) {
+    console.error("❌ cancel error:", err);
+    return res.status(500).json({ error: "Failed to cancel appointment." });
+  }
+});
+
+/**
+ * CLIENT: Reschedule appointment (only once)
+ * POST /client/appointments/:id/reschedule
+ * body: { date, time, end_time }
+ */
+app.post("/client/appointments/:id/reschedule", async (req, res) => {
+  try {
+    const auth = await requireClientUser(req);
+    if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+    const { user } = auth;
+
+    const cRes = await pool.query("SELECT id, full_name, email FROM clients WHERE user_id = $1 LIMIT 1", [user.id]);
+    if (cRes.rowCount === 0) return res.status(404).json({ error: "Client not linked." });
+    const client = cRes.rows[0];
+
+    const { id } = req.params;
+    const { date, time, end_time } = req.body || {};
+
+    if (!date || !time) return res.status(400).json({ error: "date and time are required." });
+
+    const apptRes = await pool.query(
+      `SELECT * FROM appointments WHERE id = $1 AND client_id = $2 LIMIT 1`,
+      [id, client.id]
+    );
+    if (apptRes.rowCount === 0) return res.status(404).json({ error: "Appointment not found." });
+
+    const appt = apptRes.rows[0];
+    if ((appt.client_reschedule_count || 0) >= 1) {
+      return res.status(403).json({ error: "Reschedule limit reached. Please contact us." });
+    }
+
+    const normalizeTime = (t) => {
+      const s = String(t);
+      if (s.length === 5) return `${s}:00`;
+      return s;
+    };
+
+    const newTime = normalizeTime(time);
+    const newEnd = end_time ? normalizeTime(end_time) : appt.end_time;
+
+    // prevent conflicts
+    const conflict = await pool.query(
+      `SELECT id FROM appointments WHERE date = $1 AND time = $2 AND id <> $3 LIMIT 1`,
+      [date, newTime, id]
+    );
+    if (conflict.rowCount > 0) return res.status(409).json({ error: "That time slot is already booked." });
+
+    await pool.query(
+      `UPDATE appointments
+       SET date = $1, time = $2, end_time = $3, client_reschedule_count = client_reschedule_count + 1
+       WHERE id = $4
+       RETURNING *`,
+      [date, newTime, newEnd, id]
+    );
+
+    // send reschedule email
+    await sendTutoringRescheduleEmail({
+      title: appt.title,
+      email: client.email,
+      full_name: client.full_name,
+      old_date: appt.date,
+      old_time: appt.time,
+      new_date: date,
+      new_time: newTime,
+      end_time: newEnd,
+      description: appt.description,
+    });
+
+    return res.json({ success: true, message: "Appointment rescheduled." });
+  } catch (err) {
+    console.error("❌ reschedule error:", err);
+    return res.status(500).json({ error: "Failed to reschedule appointment." });
+  }
+});
+
+// POST route for creating a task
 app.post('/tasks', async (req, res) => {
     const { text, priority, dueDate, category } = req.body;
 
@@ -868,7 +1491,7 @@ app.post('/api/clients', async (req, res) => {
 
 app.get('/api/clients', async (req, res) => {
     try {
-        const result = await pool.query('SELECT id, full_name, email, phone, category FROM clients ORDER BY id DESC');
+        const result = await pool.query('SELECT id, full_name, email, phone, category, user_id  FROM clients ORDER BY id DESC');
         res.status(200).json(result.rows);
     } catch (error) {
         console.error('Error fetching clients:', error);

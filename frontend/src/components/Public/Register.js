@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import TermsModal from './TermsModal';
 import '../../App.css';
 
 const Register = () => {
@@ -11,7 +10,7 @@ const Register = () => {
         email: '',
         phone: '',
         password: '',
-        role: 'user',
+        role: 'student',
     });
 
 
@@ -112,7 +111,7 @@ const Register = () => {
                         Role:
                         <select name="role" value={formData.role} onChange={handleChange}>
                             <option value="user">User</option>
-                            <option value="admin">Admin</option>
+                            <option value="student">Student</option>
                         </select>
                     </label>              
                     <button

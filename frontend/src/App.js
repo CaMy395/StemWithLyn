@@ -7,9 +7,8 @@ import Register from './components/Public/Register';
 import Login from './components/Public/Login';
 import ForgotPassword from './components/Public/ForgotPassword';
 import ResetPassword from './components/Public/ResetPassword';
-import Dashboard from './components/Public/Dashboard';
+import ClientPortalPage from './components/User/ClientPortalPage';
 import ClientSchedulingPage from './components/Public/ClientSchedulingPage';
-import Payment from './components/Public/Payment';
 import Profits from './components/Admin/Profits';
 import WelcomePage from './components/Public/WelcomePage';
 
@@ -29,22 +28,37 @@ import { createRoot } from 'react-dom/client'; // Import `createRoot`
 
 const App = () => {
     const [userRole, setUserRole] = useState(() => {
-        return localStorage.getItem('userRole');
-    });
+  return (
+    localStorage.getItem("userRole") ||
+    localStorage.getItem("role") ||
+    (JSON.parse(localStorage.getItem("loggedInUser") || "null")?.role ?? null)
+  );
+});
+
 
 
     const [totalFormsCount, setTotalFormsCount] = useState(0);
 
     const handleLogin = (role) => {
-        setUserRole(role);
-        localStorage.setItem('userRole', role);
-    };
+  setUserRole(role);
+  localStorage.setItem("userRole", role);
+  localStorage.setItem("role", role);
+};
+
 
     const handleLogout = () => {
-        setUserRole(null);
-        localStorage.removeItem('userRole');
-        localStorage.removeItem('username');
-    };
+  localStorage.removeItem("loggedInUser");
+  localStorage.removeItem("username");
+  localStorage.removeItem("role");
+  localStorage.removeItem("userRole");
+  localStorage.removeItem("userId");
+  localStorage.removeItem("token");
+
+  setUserRole(null); // ✅ important
+  window.location.href = "/login";
+};
+
+
 
     useEffect(() => {
         const fetchTotalFormsCount = async () => {
@@ -116,10 +130,11 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
                     </div>
                     <div className="nav-center">
                         <ul className="menu">
-                            <li><Link to="/admin">Home</Link></li>
-
+                            
                             {userRole === "admin" ? (
                                 <>
+                                <li><Link to="/admin">Home</Link></li>
+
                                     {/* Tasks & Forms */}
                                     <li className="dropdown">
                                         <span onClick={() => toggleDropdown("tasks")}>Tasks & Forms ▾</span>
@@ -138,9 +153,7 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
                                 </>
                             ) : (
                                 <ul className="menu">
-                                    <li>
-                                        <Link to="/user">Home</Link> |
-                                    </li>
+                                 <li><Link to="/client-portal">Home</Link></li>
                                 </ul>
                             )}
                         </ul>
@@ -167,7 +180,10 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
                 <Route path="/client-scheduling-success" element={<PaymentSuccess />} />
                 <Route path="/payment-success" element={<PaymentSuccess />} />
                 <Route path="/admin" element={userRole === 'admin' ? <AdminDashboard /> : <Navigate to="/login" />} />
-                <Route path="/user" element={userRole === 'user' ? <Dashboard /> : <Navigate to="/login" />} />
+<Route
+  path="/client-portal"
+  element={userRole && userRole !== "admin" ? <ClientPortalPage /> : <Navigate to="/login" />}
+/>
                 <Route path="/admin/scheduling-page" element={<SchedulingPage />} />
                 <Route path="/admin/availability-page" element={<AdminAvailabilityPage />} />
                 <Route path="/admin/clients" element={userRole === 'admin' ? <Clients /> : <Navigate to="/login" />} />

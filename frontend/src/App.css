@@ -1432,3 +1432,39 @@ input:focus, textarea:focus, select:focus {
   border-radius: 6px;
   padding: 5px;
 }
+
+.welcome-page {
+  min-height: 100vh;
+  background-image: url("/public/TutoringBackground.png");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+
+  /* This keeps text readable */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 80px;
+}
+
+.welcome-page > * {
+  position: relative;
+  z-index: 1;
+}
+
+.bubble-button {
+  border-radius: 50%;
+  border: 1.5px solid #fff;
+  transition: 
+    border 0.25s ease,
+    box-shadow 0.25s ease,
+    transform 0.25s ease;
+}
+
+/* Hover / focus effect */
+.bubble-button:hover,
+.bubble-button:focus {
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.15);
+  transform: translateY(-4px);
+}
