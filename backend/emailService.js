@@ -156,7 +156,7 @@ export { sendPortalInviteEmail };
 const sendTutoringIntakeEmail = async (formData) => {
   const additionalRecipient =
     formData.whyHelp === "United Mentors Organization"
-      ? "easylearning@stemwithlyn.com"
+      ? "stemwithlyn@gmail.com"
       : null;
 
   const recipients = [EMAIL_USER];

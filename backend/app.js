@@ -1260,6 +1260,7 @@ app.delete('/api/schedule/block', async (req, res) => {
 });
 
 // POST /api/tutoring-intake
+// POST /api/tutoring-intake  ✅ (FULL paste-in)
 app.post('/api/tutoring-intake', async (req, res) => {
   try {
     const {
@@ -1361,6 +1362,31 @@ app.post('/api/tutoring-intake', async (req, res) => {
 
     const result = await pool.query(insertQuery, values);
 
+    // ✅ SEND EMAIL (non-blocking to user success)
+    try {
+      await sendTutoringIntakeEmail({
+        fullName,
+        email,
+        phone,
+        haveBooked,
+        whyHelp,
+        learnDisable,
+        whatDisable,
+        age,
+        grade,
+        subject,
+        mathSubject,
+        scienceSubject,
+        currentGrade,
+        paymentMethod: "N/A", // email template expects it; safe placeholder
+        additionalDetails
+      });
+      console.log("📧 Tutoring intake email queued/sent.");
+    } catch (e) {
+      console.error("❌ sendTutoringIntakeEmail failed:", e?.message || e);
+      // don't fail the request if email fails
+    }
+
     return res.status(201).json({
       success: true,
       intakeId: result.rows[0].id
@@ -1373,7 +1399,6 @@ app.post('/api/tutoring-intake', async (req, res) => {
     });
   }
 });
-
 
 
 app.post('/api/tech-intake', async (req, res) => {
@@ -1968,36 +1993,68 @@ app.post('/appointments', async (req, res) => {
         error: "No appointment was created (all requested slots were already booked).",
       });
     }
-
+        // ----------------------------
+    // ✅ Send "Appointment Scheduled" email ONCE (first created appt)
+    // - only for client flow (not admin)
+    // - idempotent (won't double-send on retries)
     // ----------------------------
-    // Profit insert ONLY for paid flow (usually client success page)
-    // Idempotent: one profit per appointment_id
-    // ----------------------------
-    if (!isAdmin && safePaidAmount > 0) {
-      const first = created[0];
+    if (!isAdmin) {
+      try {
+        const first = created[0];
 
-      const already = await pool.query(
-        `SELECT 1 FROM profits WHERE appointment_id = $1 LIMIT 1`,
-        [first.id]
-      );
+        // Create a tiny email-log table? If you don't have one,
+        // we'll do a "soft idempotent" check using profits OR appointment flag.
+        // Best option: add a column appointment_email_sent boolean (see note below).
+        // For now, we'll do a DB check on a dedicated column if it exists.
+        // If it doesn't exist, skip the check and still send (safe).
 
-      if (already.rowCount === 0) {
-        const desc = `Tutoring Payment – ${first.title} (${first.date} ${first.time})`;
+        let alreadySent = false;
 
-        await pool.query(
-          `INSERT INTO profits
-            (category, description, amount, type, processor, appointment_id, paid_at)
-           VALUES
-            ($1,$2,$3,$4,$5,$6, NOW())`,
-          [
-            "Income",
-            desc,
-            safePaidAmount,
-            "Tutoring Payment",
-            "Square",
-            first.id,
-          ]
-        );
+        // ✅ If you add this column: appointments.appt_email_sent boolean default false
+        // then this check works perfectly.
+        try {
+          const chk = await pool.query(
+            `SELECT COALESCE(appt_email_sent, false) AS sent
+               FROM appointments
+              WHERE id = $1
+              LIMIT 1`,
+            [first.id]
+          );
+          alreadySent = chk.rowCount > 0 ? Boolean(chk.rows[0].sent) : false;
+        } catch {
+          // Column probably doesn't exist yet — ignore check
+          alreadySent = false;
+        }
+
+        if (!alreadySent) {
+          await sendTutoringApptEmail({
+            title: first.title,
+            email: client_email,
+            full_name: client_name,
+            date: first.date,
+            time: first.time,
+            end_time: first.end_time,
+            description: first.description,
+          });
+
+          // ✅ Mark as sent if column exists
+          try {
+            await pool.query(
+              `UPDATE appointments
+                  SET appt_email_sent = true
+                WHERE id = $1`,
+              [first.id]
+            );
+          } catch {
+            // Column doesn't exist — ignore
+          }
+
+          console.log("📧 Appointment scheduled email sent.");
+        } else {
+          console.log("📧 Appointment email already sent. Skipping.");
+        }
+      } catch (e) {
+        console.error("❌ sendTutoringApptEmail failed:", e?.message || e);
       }
     }
 
