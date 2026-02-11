@@ -26,6 +26,151 @@ oauth2Client.setCredentials({
   refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
 });
 
+const TZ = "America/New_York";
+
+const normalizeTime = (t) => {
+  if (!t) return null;
+  const s = String(t);
+  if (s.length === 5) return `${s}:00`;
+  return s;
+};
+
+const computeEndTime = (date, start, end) => {
+  if (end) return end;
+  const d = new Date(`${date}T${start}`);
+  d.setMinutes(d.getMinutes() + 60);
+  return d.toTimeString().slice(0, 8);
+};
+
+// ✅ always returns "YYYY-MM-DD"
+function toDateOnly(value) {
+  if (!value) return null;
+  // if it's already "YYYY-MM-DD"
+  const s = String(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  // if it's a Date or ISO string
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+
+  // IMPORTANT: Use local-ish day (but for date-only fields from DB,
+  // this is typically safe). If you want strict NY date-only, we can do moment.tz.
+  return d.toISOString().slice(0, 10);
+}
+
+// ✅ always returns "HH:MM:SS"
+function toTimeSeconds(value) {
+  const s = String(value || "").trim();
+  if (!s) return null;
+  if (/^\d{2}:\d{2}:\d{2}$/.test(s)) return s;
+  if (/^\d{2}:\d{2}$/.test(s)) return `${s}:00`;
+  // fallback: if someone sends "6" or 6 => "06:00:00"
+  const n = Number(s);
+  if (Number.isFinite(n)) return `${String(n).padStart(2, "0")}:00:00`;
+  return s;
+}
+
+function computeEndTimeSafe(dateOnly, startHHMMSS, endHHMMSS) {
+  if (endHHMMSS) return endHHMMSS;
+  if (!dateOnly || !startHHMMSS) return null;
+
+  const d = new Date(`${dateOnly}T${startHHMMSS}`);
+  if (Number.isNaN(d.getTime())) return null;
+
+  d.setMinutes(d.getMinutes() + 60);
+  return d.toTimeString().slice(0, 8);
+}
+
+async function createGoogleCalendarEventAndStore(appt, client) {
+  const dateOnly = toDateOnly(appt.date);
+  const start = toTimeSeconds(appt.time);
+  const end = computeEndTimeSafe(dateOnly, start, toTimeSeconds(appt.end_time));
+
+  if (!dateOnly || !start || !end) {
+    throw new Error(
+      `Bad appt datetime for Google event: date=${appt.date} start=${appt.time} end=${appt.end_time}`
+    );
+  }
+
+  const event = {
+    summary: appt.title || "Appointment",
+    description: appt.description || "",
+    start: { dateTime: `${dateOnly}T${start}`, timeZone: TZ },
+    end: { dateTime: `${dateOnly}T${end}`, timeZone: TZ },
+    attendees: client?.email ? [{ email: client.email }] : [],
+  };
+
+  try {
+    const resp = await calendar.events.insert({
+      calendarId: process.env.GOOGLE_CALENDAR_ID,
+      resource: event,
+      sendUpdates: client?.email ? "all" : "none", // ✅ avoid weirdness when no attendees
+    });
+
+    await pool.query(
+      `UPDATE appointments
+          SET google_event_id = $1,
+              google_event_link = $2
+        WHERE id = $3`,
+      [resp.data.id, resp.data.htmlLink, appt.id]
+    );
+
+    return resp.data;
+  } catch (e) {
+    // ✅ log Google's actual error payload
+    console.error("❌ Google insert error body:", e?.response?.data || e?.message || e);
+    throw e;
+  }
+}
+
+async function updateGoogleCalendarEvent(appt, client) {
+  if (!appt.google_event_id) return;
+
+  const dateOnly = toDateOnly(appt.date);
+  const start = toTimeSeconds(appt.time);
+  const end = computeEndTimeSafe(dateOnly, start, toTimeSeconds(appt.end_time));
+
+  if (!dateOnly || !start || !end) {
+    throw new Error(
+      `Bad appt datetime for Google update: date=${appt.date} start=${appt.time} end=${appt.end_time}`
+    );
+  }
+
+  try {
+    await calendar.events.patch({
+      calendarId: process.env.GOOGLE_CALENDAR_ID,
+      eventId: appt.google_event_id,
+      sendUpdates: client?.email ? "all" : "none",
+      resource: {
+        summary: appt.title || "Appointment",
+        description: appt.description || "",
+        start: { dateTime: `${dateOnly}T${start}`, timeZone: TZ },
+        end: { dateTime: `${dateOnly}T${end}`, timeZone: TZ },
+        attendees: client?.email ? [{ email: client.email }] : [],
+      },
+    });
+  } catch (e) {
+    console.error("❌ Google patch error body:", e?.response?.data || e?.message || e);
+    throw e;
+  }
+}
+
+async function deleteGoogleCalendarEvent(appt) {
+  if (!appt.google_event_id) return;
+
+  try {
+    await calendar.events.delete({
+      calendarId: process.env.GOOGLE_CALENDAR_ID,
+      eventId: appt.google_event_id,
+      sendUpdates: "none",
+    });
+  } catch (e) {
+    console.error("❌ Google delete error body:", e?.response?.data || e?.message || e);
+    throw e;
+  }
+}
+
+
 const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
 function padToSeconds(time) {
@@ -48,99 +193,50 @@ function isoDateOnly(d) {
   return new Date(d).toISOString().split("T")[0];
 }
 
-// If no end_time is provided, default to +60 minutes
-function computeEndTime(dateYYYYMMDD, startHHMMSS, endHHMMSS) {
-  if (endHHMMSS) return endHHMMSS;
+function makeUsernameInitialLast(fullName) {
+  const cleaned = String(fullName || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z\s-]/g, "")
+    .replace(/\s+/g, " ");
 
-  const start = moment.tz(`${dateYYYYMMDD}T${startHHMMSS}`, "America/New_York");
-  return start.add(60, "minutes").format("HH:mm:ss");
+  if (!cleaned) return null;
+
+  const parts = cleaned.split(" ").filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 18);
+
+  const first = parts[0];
+  const last = parts[parts.length - 1].replace(/-/g, "");
+
+  const base = `${first[0] || ""}${last}`.slice(0, 18);
+  return base || null;
 }
 
-async function createGoogleCalendarEventAndStore(appointmentRow, clientRow) {
-  const date = isoDateOnly(appointmentRow.date);
-  const startTime = normalizeTimeToSeconds(appointmentRow.time);
-  const endTime = computeEndTime(date, startTime, normalizeTimeToSeconds(appointmentRow.end_time));
+async function ensureUniqueUsername(baseUsername) {
+  const base = (baseUsername || `user${Date.now()}`)
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, "")
+    .slice(0, 18);
 
-  const event = {
-    summary: appointmentRow.title,
-    description: appointmentRow.description || "",
-    start: { dateTime: `${date}T${startTime}`, timeZone: "America/New_York" },
-    end: { dateTime: `${date}T${endTime}`, timeZone: "America/New_York" },
-    attendees: clientRow?.email ? [{ email: clientRow.email }] : [],
-  };
-
-  const response = await calendar.events.insert({
-    calendarId: process.env.GOOGLE_CALENDAR_ID, // IMPORTANT: set this correctly in env
-    resource: event,
-    sendUpdates: "all",
-  });
-
-  const googleEventId = response?.data?.id || null;
-  const googleLink = response?.data?.htmlLink || null;
-
-  // Store back onto appointment
-  if (googleEventId) {
-    await pool.query(
-      `UPDATE appointments
-         SET google_event_id = $1,
-             google_event_link = $2
-       WHERE id = $3`,
-      [googleEventId, googleLink, appointmentRow.id]
-    );
-  }
-
-  return { googleEventId, googleLink };
-}
-
-async function updateGoogleCalendarEvent(appointmentRow, clientRow) {
-  if (!appointmentRow.google_event_id) return null;
-
-  const date = isoDateOnly(appointmentRow.date);
-  const startTime = normalizeTimeToSeconds(appointmentRow.time);
-  const endTime = computeEndTime(date, startTime, normalizeTimeToSeconds(appointmentRow.end_time));
-
-  const eventPatch = {
-    summary: appointmentRow.title,
-    description: appointmentRow.description || "",
-    start: { dateTime: `${date}T${startTime}`, timeZone: "America/New_York" },
-    end: { dateTime: `${date}T${endTime}`, timeZone: "America/New_York" },
-    attendees: clientRow?.email ? [{ email: clientRow.email }] : [],
-  };
-
-  const response = await calendar.events.patch({
-    calendarId: process.env.GOOGLE_CALENDAR_ID,
-    eventId: appointmentRow.google_event_id,
-    resource: eventPatch,
-    sendUpdates: "all",
-  });
-
-  const googleLink = response?.data?.htmlLink || null;
-  if (googleLink) {
-    await pool.query(
-      `UPDATE appointments SET google_event_link = $1 WHERE id = $2`,
-      [googleLink, appointmentRow.id]
-    );
-  }
-
-  return response?.data || null;
-}
-
-async function deleteGoogleCalendarEvent(appointmentRow) {
-  if (!appointmentRow.google_event_id) return;
-
-  await calendar.events.delete({
-    calendarId: process.env.GOOGLE_CALENDAR_ID,
-    eventId: appointmentRow.google_event_id,
-    sendUpdates: "all",
-  });
-
-  await pool.query(
-    `UPDATE appointments
-        SET google_event_id = NULL,
-            google_event_link = NULL
-      WHERE id = $1`,
-    [appointmentRow.id]
+  // try base first
+  const exists = await pool.query(
+    "SELECT 1 FROM users WHERE username = $1 LIMIT 1",
+    [base]
   );
+  if (exists.rowCount === 0) return base;
+
+  // then base2, base3, ...
+  for (let n = 2; n <= 50; n++) {
+    const candidate = `${base}${n}`.slice(0, 18);
+    const chk = await pool.query(
+      "SELECT 1 FROM users WHERE username = $1 LIMIT 1",
+      [candidate]
+    );
+    if (chk.rowCount === 0) return candidate;
+  }
+
+  // fallback
+  return `${base}${String(Date.now()).slice(-4)}`.slice(0, 18);
 }
 
 
@@ -230,6 +326,36 @@ pool.on('connect', async (client) => {
         console.error('Connection error', err.stack);
     }
 })();
+
+app.get("/google/oauth", (req, res) => {
+  const scopes = ["https://www.googleapis.com/auth/calendar"];
+
+  const url = oauth2Client.generateAuthUrl({
+    access_type: "offline",   // 🔴 REQUIRED
+    prompt: "consent",        // 🔴 REQUIRED (forces refresh token)
+    scope: scopes,
+  });
+
+  res.redirect(url);
+});
+
+app.get("/google/oauth/callback", async (req, res) => {
+  try {
+    const { code } = req.query;
+    const { tokens } = await oauth2Client.getToken(code);
+
+    console.log("🔥 GOOGLE TOKENS:", tokens);
+
+    res.send(`
+      <h2>Success!</h2>
+      <p>Refresh token logged in server console.</p>
+      <p>You can close this window.</p>
+    `);
+  } catch (err) {
+    console.error("OAuth error:", err);
+    res.status(500).send("OAuth failed");
+  }
+});
 
 // POST endpoint for registration
 app.post('/register', async (req, res) => {
@@ -518,7 +644,6 @@ async function requireLoggedInUser(req) {
   return { ok: true, user };
 }
 
-
 /**
  * ADMIN: Invite an existing client to create a portal login
  * POST /admin/clients/:clientId/invite-login
@@ -526,7 +651,7 @@ async function requireLoggedInUser(req) {
  *
  * - Creates a users row with role=client (if missing)
  * - Links clients.user_id
- * - Generates reset_token and emails reset link (uses your existing reset flow)
+ * - Generates reset_token and emails reset link
  */
 app.post("/admin/clients/:clientId/invite-login", async (req, res) => {
   const { clientId } = req.params;
@@ -538,61 +663,63 @@ app.post("/admin/clients/:clientId/invite-login", async (req, res) => {
       [clientId]
     );
 
-    if (cRes.rowCount === 0) return res.status(404).json({ error: "Client not found." });
+    if (cRes.rowCount === 0) {
+      return res.status(404).json({ error: "Client not found." });
+    }
 
     const clientRow = cRes.rows[0];
+
     if (!clientRow.email) {
       return res.status(400).json({ error: "Client has no email on file." });
     }
 
-    // If already linked to a user and not forcing, re-send invite
     let userId = clientRow.user_id;
 
     if (!userId || force) {
-      // Check if a user already exists by email
+      // If a user already exists by email, link them
       const existingU = await pool.query(
-        "SELECT id, username FROM users WHERE lower(email) = lower($1) LIMIT 1",
+        "SELECT id FROM users WHERE lower(email) = lower($1) LIMIT 1",
         [clientRow.email]
       );
 
-      if (existingU.rowCount > 0 && !force) {
-        // If user exists but client not linked, link it
+      if (existingU.rowCount > 0) {
         userId = existingU.rows[0].id;
-        await pool.query("UPDATE clients SET user_id = $1 WHERE id = $2", [userId, clientRow.id]);
-      } else if (existingU.rowCount > 0 && force) {
-        userId = existingU.rows[0].id;
-        // keep linkage correct
-        await pool.query("UPDATE clients SET user_id = $1 WHERE id = $2", [userId, clientRow.id]);
+        await pool.query("UPDATE clients SET user_id = $1 WHERE id = $2", [
+          userId,
+          clientRow.id,
+        ]);
       } else {
-        // Create a new client user with a random temp password (never emailed)
+        // Create new user
         const tempPassword = crypto.randomBytes(12).toString("hex");
         const hashed = await bcrypt.hash(tempPassword, 10);
 
-        // Generate a unique username
-        let username = makeUsernameFromName(clientRow.full_name, clientRow.id);
-        let attempt = 0;
-
-        // Ensure username is unique
-        while (attempt < 5) {
-          const chk = await pool.query("SELECT 1 FROM users WHERE username = $1 LIMIT 1", [username]);
-          if (chk.rowCount === 0) break;
-          attempt += 1;
-          username = `${makeUsernameFromName(clientRow.full_name, clientRow.id)}${attempt}`;
-        }
+        const base = makeUsernameInitialLast(clientRow.full_name) || `client${clientRow.id}`;
+        const usernameToCreate = await ensureUniqueUsername(base);
 
         const newU = await pool.query(
           `INSERT INTO users (name, username, email, phone, password, role)
            VALUES ($1,$2,$3,$4,$5,'client')
-           RETURNING id, username, email`,
-          [clientRow.full_name, username, clientRow.email, null, hashed]
+           RETURNING id`,
+          [clientRow.full_name, usernameToCreate, clientRow.email, null, hashed]
         );
 
         userId = newU.rows[0].id;
-        await pool.query("UPDATE clients SET user_id = $1 WHERE id = $2", [userId, clientRow.id]);
+
+        await pool.query("UPDATE clients SET user_id = $1 WHERE id = $2", [
+          userId,
+          clientRow.id,
+        ]);
       }
     }
 
-    // Create a reset token as the "invite" link
+    // Fetch username (now guaranteed correct)
+    const uRes = await pool.query(
+      "SELECT username FROM users WHERE id = $1 LIMIT 1",
+      [userId]
+    );
+    const username = uRes.rows[0]?.username || "";
+
+    // Reset token (invite)
     const resetToken = crypto.randomBytes(20).toString("hex");
     const expiration = Date.now() + 1000 * 60 * 60 * 24 * 7; // 7 days
 
@@ -601,24 +728,15 @@ app.post("/admin/clients/:clientId/invite-login", async (req, res) => {
       [resetToken, expiration, userId]
     );
 
-    // Send invite using your existing reset email function
-    const frontendUrl = process.env.NODE_ENV === "production"
-      ? "https://stemwithlyn.onrender.com"
-      : "http://localhost:3000";
+    const frontendUrl =
+      process.env.REACT_APP_API_URL ||
+      (process.env.NODE_ENV === "production"
+        ? "https://stemwithlyn.onrender.com"
+        : "http://localhost:3000");
 
     const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
 
-    await sendPortalInviteEmail(
-      clientRow.email,
-      clientRow.full_name,
-      username,
-      resetLink
-    );
-
-
-    // Also send them their username (no password)
-    const uRes = await pool.query("SELECT username FROM users WHERE id = $1 LIMIT 1", [userId]);
-    const username = uRes.rows[0]?.username;
+    await sendPortalInviteEmail(clientRow.email, clientRow.full_name, username, resetLink);
 
     return res.json({
       success: true,
@@ -632,6 +750,8 @@ app.post("/admin/clients/:clientId/invite-login", async (req, res) => {
     return res.status(500).json({ error: "Failed to send invite." });
   }
 });
+
+
 
 /**
  * CLIENT: Get my client profile
@@ -720,7 +840,6 @@ app.get("/client/me", async (req, res) => {
   }
 });
 
-
 app.post("/admin/clients/:clientId/create-login", async (req, res) => {
   const { clientId } = req.params;
 
@@ -728,7 +847,6 @@ app.post("/admin/clients/:clientId/create-login", async (req, res) => {
   try {
     await db.query("BEGIN");
 
-    // 1) Load client
     const cRes = await db.query(
       `SELECT id, full_name, email, phone, user_id
          FROM clients
@@ -749,81 +867,79 @@ app.post("/admin/clients/:clientId/create-login", async (req, res) => {
       return res.status(400).json({ error: "Client must have an email to create a login." });
     }
 
-    if (c.user_id) {
-      // Already linked → still allow resend invite
-      await db.query("COMMIT");
-
-      // ✅ Send portal invite anyway (resend)
-      try {
-        await sendPortalInviteEmail(c.email, c.full_name);
-      } catch (e) {
-        console.error("❌ Portal invite send failed:", e.message);
-      }
-
-      return res.json({ success: true, alreadyLinked: true });
-    }
-
-    // 2) If a user already exists with this email, link it
-    const existingUser = await db.query(
-      `SELECT id, username, email, role
-         FROM users
-        WHERE lower(email) = lower($1)
-        LIMIT 1`,
-      [c.email]
-    );
-
     let userRow = null;
     let createdNewUser = false;
 
-    if (existingUser.rowCount > 0) {
-      userRow = existingUser.rows[0];
+    if (c.user_id) {
+      const u = await db.query(
+        `SELECT id, username, email, role, name
+           FROM users
+          WHERE id = $1
+          LIMIT 1`,
+        [c.user_id]
+      );
+      if (u.rowCount > 0) userRow = u.rows[0];
+    }
 
-      // don't link to admin
-      if (userRow.role === "admin") {
-        await db.query("ROLLBACK");
-        return res.status(409).json({ error: "That email belongs to an admin account." });
-      }
-
-      await db.query(`UPDATE clients SET user_id = $1 WHERE id = $2`, [userRow.id, c.id]);
-    } else {
-      // 3) Create new user with a random username + temp password
-      const base = String(c.email)
-        .split("@")[0]
-        .toLowerCase()
-        .replace(/[^a-z0-9_]/g, "")
-        .slice(0, 16);
-
-      const suffix = Math.floor(100 + Math.random() * 900);
-      const username = `${base}${suffix}`;
-
-      const tempPassword = Math.random().toString(36).slice(-10) + "A1!";
-      const hashed = await bcrypt.hash(tempPassword, 10);
-
-      const uRes = await db.query(
-        `INSERT INTO users (name, username, email, phone, password, role)
-         VALUES ($1, $2, $3, $4, $5, 'user')
-         RETURNING id, username, email, role`,
-        [c.full_name, username, c.email, c.phone || null, hashed]
+    if (!userRow) {
+      const existingUser = await db.query(
+        `SELECT id, username, email, role
+           FROM users
+          WHERE lower(email) = lower($1)
+          LIMIT 1`,
+        [c.email]
       );
 
-      userRow = uRes.rows[0];
-      createdNewUser = true;
+      if (existingUser.rowCount > 0) {
+        userRow = existingUser.rows[0];
 
-      await db.query(`UPDATE clients SET user_id = $1 WHERE id = $2`, [userRow.id, c.id]);
+        if (userRow.role === "admin") {
+          await db.query("ROLLBACK");
+          return res.status(409).json({ error: "That email belongs to an admin account." });
+        }
 
-      // NOTE: We do NOT email the temp password.
-      // We email a portal invite telling them to set password via "Forgot Password".
+        await db.query(`UPDATE clients SET user_id = $1 WHERE id = $2`, [userRow.id, c.id]);
+      } else {
+        // ✅ Create new user with first initial + last name
+        const base = makeUsernameInitialLast(c.full_name) || String(c.email).split("@")[0].slice(0, 12);
+        const username = await ensureUniqueUsername(base);
+
+        const tempPassword = Math.random().toString(36).slice(-10) + "A1!";
+        const hashed = await bcrypt.hash(tempPassword, 10);
+
+        const uRes = await db.query(
+          `INSERT INTO users (name, username, email, phone, password, role)
+           VALUES ($1, $2, $3, $4, $5, 'client')
+           RETURNING id, username, email, role`,
+          [c.full_name, username, c.email, c.phone || null, hashed]
+        );
+
+        userRow = uRes.rows[0];
+        createdNewUser = true;
+
+        await db.query(`UPDATE clients SET user_id = $1 WHERE id = $2`, [userRow.id, c.id]);
+      }
     }
+
+    const resetToken = crypto.randomBytes(20).toString("hex");
+    const expiration = Date.now() + 1000 * 60 * 60 * 24 * 7;
+
+    await db.query(
+      "UPDATE users SET reset_token = $1, reset_token_expiry = $2 WHERE id = $3",
+      [resetToken, expiration, userRow.id]
+    );
 
     await db.query("COMMIT");
 
-    // ✅ 4) Always send portal invite email (works for existing users too)
-    try {
-      await sendPortalInviteEmail(c.email, c.full_name);
-    } catch (e) {
-      console.error("❌ Portal invite send failed:", e.message);
-      // We still return success because account linking happened
-    }
+    const frontendUrl =
+      process.env.REACT_APP_API_URL ||
+      (process.env.NODE_ENV === "production"
+        ? "https://stemwithlyn.onrender.com"
+        : "http://localhost:3000");
+
+    const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
+
+    await sendPortalInviteEmail(c.email, c.full_name, userRow.username, resetLink);
 
     return res.json({
       success: true,
@@ -838,6 +954,7 @@ app.post("/admin/clients/:clientId/create-login", async (req, res) => {
     db.release();
   }
 });
+
 
 
 /**
@@ -871,56 +988,60 @@ app.get("/client/appointments", async (req, res) => {
 });
 
 /**
- * CLIENT: Cancel appointment (only once)
  * POST /client/appointments/:id/cancel
  */
+// ✅ Client cancels their own appointment (deletes Google event + DB row)
 app.post("/client/appointments/:id/cancel", async (req, res) => {
+  const { id } = req.params;
+
   try {
-    const auth = await requireClientUser(req);
-    if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
-    const { user } = auth;
-
-    const cRes = await pool.query("SELECT id FROM clients WHERE user_id = $1 LIMIT 1", [user.id]);
-    if (cRes.rowCount === 0) return res.status(404).json({ error: "Client not linked." });
-    const clientId = cRes.rows[0].id;
-
-    const { id } = req.params;
-
+    // 1) Load appointment (need google_event_id)
     const apptRes = await pool.query(
-      `SELECT * FROM appointments WHERE id = $1 AND client_id = $2 LIMIT 1`,
-      [id, clientId]
+      `SELECT *
+         FROM appointments
+        WHERE id = $1
+        LIMIT 1`,
+      [id]
     );
 
-    if (apptRes.rowCount === 0) return res.status(404).json({ error: "Appointment not found." });
+    if (apptRes.rowCount === 0) {
+      return res.status(404).json({ error: "Appointment not found" });
+    }
 
     const appt = apptRes.rows[0];
-    if ((appt.client_cancel_count || 0) >= 1) {
-      return res.status(403).json({ error: "Cancel limit reached. Please contact us." });
+
+    // 2) Increment client cancel count
+    // (If your column name differs, change it here)
+    try {
+      await pool.query(
+        `UPDATE appointments
+            SET client_cancel_count = COALESCE(client_cancel_count, 0) + 1
+          WHERE id = $1`,
+        [id]
+      );
+    } catch (e) {
+      console.error("⚠️ Could not increment client_cancel_count:", e?.message || e);
+      // do not block cancellation
     }
 
-    // increment cancel count + delete (matches your current cancel pattern)
-    await pool.query("UPDATE appointments SET client_cancel_count = client_cancel_count + 1 WHERE id = $1", [id]);
-    await pool.query("DELETE FROM appointments WHERE id = $1", [id]);
-
-    // Email cancellation using your existing helper
-    const clientRow = await pool.query("SELECT email, full_name FROM clients WHERE id = $1", [clientId]);
-    if (clientRow.rowCount > 0) {
-      await sendCancellationEmail({
-        title: appt.title,
-        email: clientRow.rows[0].email,
-        full_name: clientRow.rows[0].full_name,
-        date: appt.date,
-        time: appt.time,
-        description: appt.description,
-      });
+    // 3) Delete Google Calendar event FIRST (so no ghost events)
+    try {
+      await deleteGoogleCalendarEvent(appt);
+    } catch (e) {
+      console.error("❌ Google calendar delete failed (client cancel):", e?.message || e);
+      // do not block cancellation
     }
 
-    return res.json({ success: true, message: "Appointment cancelled." });
-  } catch (err) {
-    console.error("❌ cancel error:", err);
+    // 4) Delete appointment row
+    await pool.query(`DELETE FROM appointments WHERE id = $1`, [id]);
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("❌ Error cancelling appointment:", error);
     return res.status(500).json({ error: "Failed to cancel appointment." });
   }
 });
+
 
 /**
  * CLIENT: Reschedule appointment (only once)
@@ -2176,8 +2297,6 @@ app.post('/appointments', async (req, res) => {
 });
 
 
-
-
 // Get all appointments (WITH client info)
 app.get('/appointments', async (req, res) => {
   try {
@@ -2398,57 +2517,48 @@ app.patch('/appointments/:id/paid', async (req, res) => {
   }
 });
 
-app.delete('/appointments/:id', async (req, res) => {
-    const appointmentId = req.params.id;
+// ✅ Admin deletes an appointment (deletes Google event + DB row)
+app.delete("/appointments/:id", async (req, res) => {
+  const { id } = req.params;
+  const appointmentId = parseInt(id, 10);
 
-    try {
-        // Fetch the appointment details before deleting
-        const appointmentResult = await pool.query(
-            `SELECT * FROM appointments WHERE id = $1`,
-            [appointmentId]
-        );
+  if (!appointmentId) {
+    return res.status(400).json({ error: "Invalid appointment id." });
+  }
 
-        if (appointmentResult.rowCount === 0) {
-            return res.status(404).json({ error: 'Appointment not found' });
-        }
+  try {
+    // 1) Load appointment first (need google_event_id)
+    const appointmentResult = await pool.query(
+      `SELECT *
+         FROM appointments
+        WHERE id = $1
+        LIMIT 1`,
+      [appointmentId]
+    );
 
-        const appointment = appointmentResult.rows[0];
-
-        // Fetch the client's email and full name
-        const clientResult = await pool.query(
-            `SELECT email, full_name FROM clients WHERE id = $1`,
-            [appointment.client_id]
-        );
-
-        if (clientResult.rowCount === 0) {
-            return res.status(400).json({ error: 'Client not found' });
-        }
-
-        const client = clientResult.rows[0];
-
-        // Delete the appointment
-        await pool.query(
-            `DELETE FROM appointments WHERE id = $1`,
-            [appointmentId]
-        );
-
-        // Send cancellation email
-        await sendCancellationEmail({
-            title: appointment.title,
-            email: client.email,
-            full_name: client.full_name,
-            date: appointment.date,
-            time: appointment.time,
-            description: appointment.description,
-        });
-
-        res.status(200).json({ message: 'Appointment successfully deleted' });
-    } catch (error) {
-        console.error('Error deleting appointment:', error.message);
-        res.status(500).json({ error: 'Failed to delete appointment' });
+    if (appointmentResult.rowCount === 0) {
+      return res.status(404).json({ error: "Appointment not found." });
     }
-});
 
+    const appt = appointmentResult.rows[0];
+
+    // 2) Delete Google Calendar event FIRST
+    try {
+      await deleteGoogleCalendarEvent(appt);
+    } catch (e) {
+      console.error("❌ Google calendar delete failed (admin delete):", e?.message || e);
+      // do not block deletion
+    }
+
+    // 3) Delete DB row
+    await pool.query(`DELETE FROM appointments WHERE id = $1`, [appointmentId]);
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("❌ Error deleting appointment:", error);
+    return res.status(500).json({ error: "Failed to delete appointment." });
+  }
+});
 
 //Availability
 // Endpoint to get available time slots

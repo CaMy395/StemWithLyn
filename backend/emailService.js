@@ -24,8 +24,6 @@ const safeJoinRecipients = (arr) =>
 
 /* ======================================================
    ONE (or TWO) SHARED TRANSPORTERS
-   - EMAIL_* is your main sender (stemwithlyn@gmail.com)
-   - ADMIN_* is optional; if not set, we fall back to EMAIL_*
 ====================================================== */
 
 const EMAIL_USER = process.env.EMAIL_USER;
@@ -35,31 +33,19 @@ const EMAIL_PASS = process.env.EMAIL_PASS;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || EMAIL_USER;
 const ADMIN_PASS = process.env.ADMIN_PASS || EMAIL_PASS;
 
-// Main transporter (used for most emails)
 const transporter = nodemailer.createTransport({
   service: "gmail",
-  auth: {
-    user: EMAIL_USER,
-    pass: EMAIL_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false, // ✅ fixes Render self-signed chain issues
-  },
+  auth: { user: EMAIL_USER, pass: EMAIL_PASS },
+  tls: { rejectUnauthorized: false },
 });
 
-// Admin transporter (only used if you want separate sender creds)
 const adminTransporter =
   ADMIN_EMAIL === EMAIL_USER && ADMIN_PASS === EMAIL_PASS
     ? transporter
     : nodemailer.createTransport({
         service: "gmail",
-        auth: {
-          user: ADMIN_EMAIL,
-          pass: ADMIN_PASS,
-        },
-        tls: {
-          rejectUnauthorized: false,
-        },
+        auth: { user: ADMIN_EMAIL, pass: ADMIN_PASS },
+        tls: { rejectUnauthorized: false },
       });
 
 /* ======================================================
@@ -112,7 +98,10 @@ const sendRegistrationEmail = async (recipient, username, name) => {
     const info = await adminTransporter.sendMail(mailOptions);
     console.log(`✅ Registration email sent to ${recipient}: ${info.response}`);
   } catch (error) {
-    console.error(`❌ Error sending registration email to ${recipient}:`, error.message);
+    console.error(
+      `❌ Error sending registration email to ${recipient}:`,
+      error.message
+    );
   }
 };
 
@@ -122,21 +111,25 @@ export { sendRegistrationEmail };
    Send Portal Invite Email
 ====================================================== */
 
-// ✅ Send Portal Invite Email (token link, no email step)
+// ✅ Send Portal Invite Email (token link, no password emailed)
 const sendPortalInviteEmail = async (email, full_name, username, resetLink) => {
+  const safeName = full_name ?? "";
+  const safeUsername = username ?? "";   // ✅ prevents "undefined"
+  const safeLink = resetLink ?? "";      // ✅ prevents "undefined"
+
   const mailOptions = {
-    from: process.env.EMAIL_USER,
+    from: EMAIL_USER,
     to: email,
     subject: "Your STEM with Lyn Portal Login",
     html: `
-      <p>Hello ${full_name || ""},</p>
+      <p>Hello ${safeName},</p>
 
       <p>Your client portal is ready 🎉</p>
 
-      <p><strong>Username:</strong> ${username}</p>
+      <p><strong>Username:</strong> ${safeUsername}</p>
 
       <p>Set your password here:</p>
-      <p><a href="${resetLink}">${resetLink}</a></p>
+      <p><a href="${safeLink}">${safeLink}</a></p>
 
       <p>This link expires in 7 days. If it expires, just use “Forgot Password” on the login page.</p>
 
@@ -145,6 +138,13 @@ const sendPortalInviteEmail = async (email, full_name, username, resetLink) => {
   };
 
   try {
+    console.log("📨 Portal invite email payload:", {
+      email,
+      safeName,
+      safeUsername,
+      safeLink,
+    });
+
     await transporter.sendMail(mailOptions);
     console.log(`📧 Portal invite email sent to ${email}`);
   } catch (error) {
@@ -154,16 +154,13 @@ const sendPortalInviteEmail = async (email, full_name, username, resetLink) => {
 
 export { sendPortalInviteEmail };
 
-
 /* ======================================================
    Tutoring Intake Email
 ====================================================== */
 
 const sendTutoringIntakeEmail = async (formData) => {
   const additionalRecipient =
-    formData.whyHelp === "United Mentors Organization"
-      ? "stemwithlyn@gmail.com"
-      : null;
+    formData.whyHelp === "United Mentors Organization" ? "stemwithlyn@gmail.com" : null;
 
   const recipients = [EMAIL_USER];
   if (additionalRecipient) recipients.push(additionalRecipient);
@@ -248,9 +245,7 @@ const sendTutoringApptEmail = async ({
   description,
 }) => {
   const adminEmail = "stemwithlyn@gmail.com";
-  const additionalRecipient = String(title || "")
-    .toLowerCase()
-    .includes("united mentors")
+  const additionalRecipient = String(title || "").toLowerCase().includes("united mentors")
     ? "unitedmentorsllc@gmail.com"
     : null;
 
@@ -310,9 +305,7 @@ const sendTutoringRescheduleEmail = async ({
   description,
 }) => {
   const adminEmail = "stemwithlyn@gmail.com";
-  const additionalRecipient = String(title || "")
-    .toLowerCase()
-    .includes("united mentors")
+  const additionalRecipient = String(title || "").toLowerCase().includes("united mentors")
     ? "unitedmentorsllc@gmail.com"
     : null;
 
@@ -367,9 +360,7 @@ export { sendTutoringRescheduleEmail };
 
 const sendCancellationEmail = async ({ title, email, full_name, date, time, description }) => {
   const adminEmail = "stemwithlyn@gmail.com";
-  const additionalRecipient = String(title || "")
-    .toLowerCase()
-    .includes("united mentors")
+  const additionalRecipient = String(title || "").toLowerCase().includes("united mentors")
     ? "unitedmentorsllc@gmail.com"
     : null;
 
@@ -579,7 +570,4 @@ const sendAppointmentReminderEmail = async ({ email, full_name, date, time, titl
 
 export { sendAppointmentReminderEmail };
 
-/* ======================================================
-   (Optional) default export transporter if you ever need it
-====================================================== */
 export default transporter;

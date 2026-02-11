@@ -13,7 +13,6 @@ import Profits from './components/Admin/Profits';
 import WelcomePage from './components/Public/WelcomePage';
 
 //Client Pages
-import PortalSchedulingPage from './components/User/BookingPage';
 
 //Admin Pages
 import MyTasks from './components/Admin/MyTasks';
@@ -188,7 +187,15 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
   path="/client-portal"
   element={userRole && userRole !== "admin" ? <ClientPortalPage /> : <Navigate to="/login" />}
 />
-<Route path="/client-portal/schedule" element={ userRole && userRole !== "admin" ? <PortalSchedulingPage /> : <Navigate to="/login" />} />
+<Route
+  path="/client-portal/schedule"
+  element={
+    userRole && userRole !== "admin"
+      ? <ClientSchedulingPage portalMode />
+      : <Navigate to="/login" />
+  }
+/>
+
 
                 <Route path="/admin/scheduling-page" element={<SchedulingPage />} />
                 <Route path="/admin/availability-page" element={<AdminAvailabilityPage />} />

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 export default function PaymentSuccess() {
@@ -6,9 +6,25 @@ export default function PaymentSuccess() {
   const [error, setError] = useState("");
   const [appointment, setAppointment] = useState(null);
 
+  const hasFinalizedRef = useRef(false);
+
   const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:3001";
 
+  const getPortalHome = () => {
+    const role =
+      localStorage.getItem("userRole") ||
+      localStorage.getItem("role") ||
+      (JSON.parse(localStorage.getItem("loggedInUser") || "null")?.role ?? null);
+
+    if (role && role !== "admin") return "/client-portal";
+    return "/";
+  };
+
   useEffect(() => {
+    // ✅ prevents double-fire (React StrictMode / dev)
+    if (hasFinalizedRef.current) return;
+    hasFinalizedRef.current = true;
+
     const finalize = async () => {
       try {
         const stored = localStorage.getItem("pendingAppointment");
@@ -16,7 +32,7 @@ export default function PaymentSuccess() {
 
         const appointmentData = JSON.parse(stored);
 
-        // ✅ Create appointment ONLY AFTER payment (logic unchanged)
+        // ✅ Create appointment ONLY AFTER payment (your logic)
         const res = await fetch(`${apiUrl}/appointments`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -38,35 +54,36 @@ export default function PaymentSuccess() {
         localStorage.removeItem("pendingAppointment");
         setStatus("success");
       } catch (err) {
-        setError(err.message);
+        setError(err?.message || "Failed to finalize booking.");
         setStatus("error");
       }
     };
 
     finalize();
   }, [apiUrl]);
-const formatDate = (dateStr) => {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-};
 
-const formatTime = (timeStr) => {
-  if (!timeStr) return "";
-  const [h, m] = String(timeStr).split(":");
-  const d = new Date();
-  d.setHours(Number(h), Number(m || 0));
-  return d.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-};
+  const formatDate = (dateStr) => {
+    if (!dateStr) return "";
+    const d = new Date(dateStr);
+    return d.toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  };
+
+  const formatTime = (timeStr) => {
+    if (!timeStr) return "";
+    const [h, m] = String(timeStr).split(":");
+    const d = new Date();
+    d.setHours(Number(h), Number(m || 0));
+    return d.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  };
 
   const container = {
     minHeight: "70vh",
@@ -154,6 +171,8 @@ const formatTime = (timeStr) => {
     color: "#111827",
   };
 
+  const portalHome = getPortalHome();
+
   return (
     <div style={container}>
       <div style={card}>
@@ -208,7 +227,7 @@ const formatTime = (timeStr) => {
                 <Link to="/client-scheduling" style={secondaryBtn}>
                   Back to scheduling
                 </Link>
-                <Link to="/" style={primaryBtn}>
+                <Link to={portalHome} style={primaryBtn}>
                   Back to portal
                 </Link>
               </div>
@@ -249,7 +268,7 @@ const formatTime = (timeStr) => {
                 <Link to="/client-scheduling" style={secondaryBtn}>
                   Book another
                 </Link>
-                <Link to="/" style={primaryBtn}>
+                <Link to={portalHome} style={primaryBtn}>
                   Back to portal
                 </Link>
               </div>
