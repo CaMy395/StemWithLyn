@@ -122,19 +122,24 @@ export { sendRegistrationEmail };
    Send Portal Invite Email
 ====================================================== */
 
-const sendPortalInviteEmail = async (email, full_name) => {
-  const resetUrl =
-    `${process.env.REACT_APP_API_URL || "http://localhost:3000"}/forgot-password`;
-
+// ✅ Send Portal Invite Email (token link, no email step)
+const sendPortalInviteEmail = async (email, full_name, username, resetLink) => {
   const mailOptions = {
     from: process.env.EMAIL_USER,
     to: email,
     subject: "Your STEM with Lyn Portal Login",
     html: `
       <p>Hello ${full_name || ""},</p>
-      <p>Your client portal is ready.</p>
-      <p>To set your password, click <b>Forgot Password</b> here:</p>
-      <p><a href="${resetUrl}">${resetUrl}</a></p>
+
+      <p>Your client portal is ready 🎉</p>
+
+      <p><strong>Username:</strong> ${username}</p>
+
+      <p>Set your password here:</p>
+      <p><a href="${resetLink}">${resetLink}</a></p>
+
+      <p>This link expires in 7 days. If it expires, just use “Forgot Password” on the login page.</p>
+
       <p>– STEM with Lyn</p>
     `,
   };
@@ -148,6 +153,7 @@ const sendPortalInviteEmail = async (email, full_name) => {
 };
 
 export { sendPortalInviteEmail };
+
 
 /* ======================================================
    Tutoring Intake Email

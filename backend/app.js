@@ -23,7 +23,6 @@ const oauth2Client = new google.auth.OAuth2(
 );
 
 oauth2Client.setCredentials({
-  access_token: process.env.GOOGLE_ACCESS_TOKEN,
   refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
 });
 
@@ -38,42 +37,111 @@ function formatDate(date) {
   return new Date(date).toISOString().split('T')[0];
 }
 
-async function createGoogleCalendarEvent(appointment, client) {
-  const startTime = padToSeconds(appointment.time);
-  const endTime = padToSeconds(appointment.end_time || appointment.time);
-  const date = formatDate(appointment.date);
-
-  const event = {
-    summary: appointment.title,
-    description: appointment.description || '',
-    start: {
-      dateTime: `${date}T${startTime}`,
-      timeZone: 'America/New_York',
-    },
-    end: {
-      dateTime: `${date}T${endTime}`,
-      timeZone: 'America/New_York',
-    },
-    attendees: client?.email ? [{ email: client.email }] : [],
-  };
-
-  try {
-    console.log("📤 Creating Google Calendar Event with:", JSON.stringify(event, null, 2));
-
-    const response = await calendar.events.insert({
-      calendarId: process.env.GOOGLE_CALENDAR_ID || 'stemwithlyn@gmail.com',
-      resource: event,
-    });
-
-    console.log("📆 Google Calendar Event Created:", response.data.htmlLink);
-  } catch (error) {
-    console.error("❌ Failed to create Google Calendar event:", error.message);
-    if (error.response?.data) {
-      console.error("🔍 Google API Error Details:", JSON.stringify(error.response.data, null, 2));
-    }
-  }
+function normalizeTimeToSeconds(t) {
+  const s = String(t || "").trim();
+  if (!s) return null;
+  if (s.length === 5) return `${s}:00`;
+  return s; // assume HH:MM:SS
 }
 
+function isoDateOnly(d) {
+  return new Date(d).toISOString().split("T")[0];
+}
+
+// If no end_time is provided, default to +60 minutes
+function computeEndTime(dateYYYYMMDD, startHHMMSS, endHHMMSS) {
+  if (endHHMMSS) return endHHMMSS;
+
+  const start = moment.tz(`${dateYYYYMMDD}T${startHHMMSS}`, "America/New_York");
+  return start.add(60, "minutes").format("HH:mm:ss");
+}
+
+async function createGoogleCalendarEventAndStore(appointmentRow, clientRow) {
+  const date = isoDateOnly(appointmentRow.date);
+  const startTime = normalizeTimeToSeconds(appointmentRow.time);
+  const endTime = computeEndTime(date, startTime, normalizeTimeToSeconds(appointmentRow.end_time));
+
+  const event = {
+    summary: appointmentRow.title,
+    description: appointmentRow.description || "",
+    start: { dateTime: `${date}T${startTime}`, timeZone: "America/New_York" },
+    end: { dateTime: `${date}T${endTime}`, timeZone: "America/New_York" },
+    attendees: clientRow?.email ? [{ email: clientRow.email }] : [],
+  };
+
+  const response = await calendar.events.insert({
+    calendarId: process.env.GOOGLE_CALENDAR_ID, // IMPORTANT: set this correctly in env
+    resource: event,
+    sendUpdates: "all",
+  });
+
+  const googleEventId = response?.data?.id || null;
+  const googleLink = response?.data?.htmlLink || null;
+
+  // Store back onto appointment
+  if (googleEventId) {
+    await pool.query(
+      `UPDATE appointments
+         SET google_event_id = $1,
+             google_event_link = $2
+       WHERE id = $3`,
+      [googleEventId, googleLink, appointmentRow.id]
+    );
+  }
+
+  return { googleEventId, googleLink };
+}
+
+async function updateGoogleCalendarEvent(appointmentRow, clientRow) {
+  if (!appointmentRow.google_event_id) return null;
+
+  const date = isoDateOnly(appointmentRow.date);
+  const startTime = normalizeTimeToSeconds(appointmentRow.time);
+  const endTime = computeEndTime(date, startTime, normalizeTimeToSeconds(appointmentRow.end_time));
+
+  const eventPatch = {
+    summary: appointmentRow.title,
+    description: appointmentRow.description || "",
+    start: { dateTime: `${date}T${startTime}`, timeZone: "America/New_York" },
+    end: { dateTime: `${date}T${endTime}`, timeZone: "America/New_York" },
+    attendees: clientRow?.email ? [{ email: clientRow.email }] : [],
+  };
+
+  const response = await calendar.events.patch({
+    calendarId: process.env.GOOGLE_CALENDAR_ID,
+    eventId: appointmentRow.google_event_id,
+    resource: eventPatch,
+    sendUpdates: "all",
+  });
+
+  const googleLink = response?.data?.htmlLink || null;
+  if (googleLink) {
+    await pool.query(
+      `UPDATE appointments SET google_event_link = $1 WHERE id = $2`,
+      [googleLink, appointmentRow.id]
+    );
+  }
+
+  return response?.data || null;
+}
+
+async function deleteGoogleCalendarEvent(appointmentRow) {
+  if (!appointmentRow.google_event_id) return;
+
+  await calendar.events.delete({
+    calendarId: process.env.GOOGLE_CALENDAR_ID,
+    eventId: appointmentRow.google_event_id,
+    sendUpdates: "all",
+  });
+
+  await pool.query(
+    `UPDATE appointments
+        SET google_event_id = NULL,
+            google_event_link = NULL
+      WHERE id = $1`,
+    [appointmentRow.id]
+  );
+}
 
 
 const jsonPath = path.join(process.cwd(), '../frontend/src/data/appointmentTypes.json');
@@ -540,7 +608,13 @@ app.post("/admin/clients/:clientId/invite-login", async (req, res) => {
 
     const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
 
-    await sendResetEmail(clientRow.email, resetLink);
+    await sendPortalInviteEmail(
+      clientRow.email,
+      clientRow.full_name,
+      username,
+      resetLink
+    );
+
 
     // Also send them their username (no password)
     const uRes = await pool.query("SELECT username FROM users WHERE id = $1 LIMIT 1", [userId]);
@@ -1832,10 +1906,12 @@ app.post('/appointments', async (req, res) => {
       });
     }
 
+    // ----------------------------
     // Normalize times for DB "time" type
+    // ----------------------------
     const normalizeTime = (t) => {
       if (t == null || t === "") return null;
-      const s = String(t);
+      const s = String(t).trim();
       if (s.length === 5) return `${s}:00`;        // HH:MM -> HH:MM:SS
       if (s.length === 8) return s;                // HH:MM:SS
       // If someone passes "10" or 10, treat as HH:00:00
@@ -1852,7 +1928,10 @@ app.post('/appointments', async (req, res) => {
     // ----------------------------
     let finalClientId = client_id;
 
-    const clientRes = await pool.query(`SELECT id FROM clients WHERE email = $1`, [client_email]);
+    const clientRes = await pool.query(
+      `SELECT id FROM clients WHERE email = $1`,
+      [client_email]
+    );
 
     if (clientRes.rowCount === 0) {
       const newClient = await pool.query(
@@ -1864,10 +1943,21 @@ app.post('/appointments', async (req, res) => {
       finalClientId = newClient.rows[0].id;
     } else {
       finalClientId = clientRes.rows[0].id;
+
+      // Optional: keep client info fresh (safe update)
+      try {
+        await pool.query(
+          `UPDATE clients
+              SET full_name = COALESCE(NULLIF($1,''), full_name),
+                  phone = COALESCE(NULLIF($2,''), phone)
+            WHERE id = $3`,
+          [client_name || "", client_phone || "", finalClientId]
+        );
+      } catch {}
     }
 
     // ----------------------------
-    // Price / paid logic (appointments table has only paid + price)
+    // Price / paid logic
     // ----------------------------
     const paidAmount = Number(amount_paid ?? 0);
     const safePaidAmount = Number.isFinite(paidAmount) ? paidAmount : 0;
@@ -1882,7 +1972,7 @@ app.post('/appointments', async (req, res) => {
       const out = [];
 
       // Base start date
-      const start = new Date(date + "T12:00:00"); // noon prevents timezone date shifting
+      const start = new Date(date + "T12:00:00"); // noon prevents timezone shifting
       const occ = Math.max(1, parseInt(occurrences, 10) || 1);
 
       const weekdayMap = {
@@ -1896,15 +1986,18 @@ app.post('/appointments', async (req, res) => {
       };
 
       // Weekly/Biweekly with selected weekdays
-      if ((recurrence === "weekly" || recurrence === "biweekly") && Array.isArray(weekdays) && weekdays.length > 0) {
+      if (
+        (recurrence === "weekly" || recurrence === "biweekly") &&
+        Array.isArray(weekdays) &&
+        weekdays.length > 0
+      ) {
         const intervalDays = recurrence === "weekly" ? 7 : 14;
 
-        // We interpret "occurrences" as number of weeks
+        // Interpret "occurrences" as number of weeks
         for (let w = 0; w < occ; w++) {
           const weekStart = new Date(start);
           weekStart.setDate(start.getDate() + w * intervalDays);
 
-          // For each selected weekday, compute that week's date
           for (const wd of weekdays) {
             const targetDow = weekdayMap[wd];
             if (targetDow === undefined) continue;
@@ -1956,6 +2049,7 @@ app.post('/appointments', async (req, res) => {
         `SELECT id FROM appointments WHERE date = $1 AND time = $2 LIMIT 1`,
         [d, formattedTime]
       );
+
       if (conflict.rowCount > 0) {
         // Admin: skip; Client: treat as conflict
         if (!isAdmin) {
@@ -1993,25 +2087,40 @@ app.post('/appointments', async (req, res) => {
         error: "No appointment was created (all requested slots were already booked).",
       });
     }
-        // ----------------------------
+
+    // ----------------------------
+    // ✅ Create Google Calendar event(s) AFTER DB insert
+    // (requires createGoogleCalendarEventAndStore + google_event_id column)
+    // ----------------------------
+    try {
+      const cRes = await pool.query(
+        `SELECT id, full_name, email, phone FROM clients WHERE id = $1 LIMIT 1`,
+        [finalClientId]
+      );
+      const clientRow = cRes.rows[0] || null;
+
+      for (const appt of created) {
+        // Only create if missing (prevents duplicates if re-hit)
+        if (!appt.google_event_id) {
+          await createGoogleCalendarEventAndStore(appt, clientRow);
+        }
+      }
+    } catch (e) {
+      console.error("❌ Google calendar create failed:", e?.message || e);
+    }
+
+    // ----------------------------
     // ✅ Send "Appointment Scheduled" email ONCE (first created appt)
     // - only for client flow (not admin)
-    // - idempotent (won't double-send on retries)
+    // - idempotent-ish (won't double-send on retries if appt_email_sent exists)
     // ----------------------------
     if (!isAdmin) {
       try {
         const first = created[0];
-
-        // Create a tiny email-log table? If you don't have one,
-        // we'll do a "soft idempotent" check using profits OR appointment flag.
-        // Best option: add a column appointment_email_sent boolean (see note below).
-        // For now, we'll do a DB check on a dedicated column if it exists.
-        // If it doesn't exist, skip the check and still send (safe).
-
         let alreadySent = false;
 
-        // ✅ If you add this column: appointments.appt_email_sent boolean default false
-        // then this check works perfectly.
+        // If you have column appointments.appt_email_sent boolean default false,
+        // this will prevent double emails.
         try {
           const chk = await pool.query(
             `SELECT COALESCE(appt_email_sent, false) AS sent
@@ -2022,7 +2131,6 @@ app.post('/appointments', async (req, res) => {
           );
           alreadySent = chk.rowCount > 0 ? Boolean(chk.rows[0].sent) : false;
         } catch {
-          // Column probably doesn't exist yet — ignore check
           alreadySent = false;
         }
 
@@ -2037,7 +2145,7 @@ app.post('/appointments', async (req, res) => {
             description: first.description,
           });
 
-          // ✅ Mark as sent if column exists
+          // Mark as sent if column exists
           try {
             await pool.query(
               `UPDATE appointments
@@ -2045,9 +2153,7 @@ app.post('/appointments', async (req, res) => {
                 WHERE id = $1`,
               [first.id]
             );
-          } catch {
-            // Column doesn't exist — ignore
-          }
+          } catch {}
 
           console.log("📧 Appointment scheduled email sent.");
         } else {
@@ -2068,6 +2174,7 @@ app.post('/appointments', async (req, res) => {
     return res.status(500).json({ error: "Failed to create appointment." });
   }
 });
+
 
 
 
@@ -2185,6 +2292,25 @@ app.patch('/appointments/:id', async (req, res) => {
         );
 
         const updatedAppointment = result.rows[0];
+
+        // ✅ Update Google event if linked
+try {
+  const apptRes = await pool.query(
+    `SELECT a.*, c.email, c.full_name
+       FROM appointments a
+       LEFT JOIN clients c ON c.id = a.client_id
+      WHERE a.id = $1
+      LIMIT 1`,
+    [updatedAppointment.id]
+  );
+
+  if (apptRes.rowCount > 0) {
+    const appt = apptRes.rows[0];
+    await updateGoogleCalendarEvent(appt, { email: appt.email });
+  }
+} catch (e) {
+  console.error("❌ Google calendar update failed:", e?.message || e);
+}
 
         // Fetch the client's email and full name
         const clientResult = await pool.query(

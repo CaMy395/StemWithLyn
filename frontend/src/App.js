@@ -12,6 +12,9 @@ import ClientSchedulingPage from './components/Public/ClientSchedulingPage';
 import Profits from './components/Admin/Profits';
 import WelcomePage from './components/Public/WelcomePage';
 
+//Client Pages
+import PortalSchedulingPage from './components/User/BookingPage';
+
 //Admin Pages
 import MyTasks from './components/Admin/MyTasks';
 import AdminIntakeForms from './components/Admin/AdminIntakeForms';
@@ -24,7 +27,6 @@ import PaymentSuccess from './components/Public/PaymentSuccess';
 
 import WebSocketProvider from './WebSocketProvider';
 import './App.css';
-import { createRoot } from 'react-dom/client'; // Import `createRoot`
 
 const App = () => {
     const [userRole, setUserRole] = useState(() => {
@@ -154,6 +156,8 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
                             ) : (
                                 <ul className="menu">
                                  <li><Link to="/client-portal">Home</Link></li>
+                                 <li><Link to="/client-portal/schedule">Book An Appointment</Link></li>
+
                                 </ul>
                             )}
                         </ul>
@@ -184,6 +188,8 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
   path="/client-portal"
   element={userRole && userRole !== "admin" ? <ClientPortalPage /> : <Navigate to="/login" />}
 />
+<Route path="/client-portal/schedule" element={ userRole && userRole !== "admin" ? <PortalSchedulingPage /> : <Navigate to="/login" />} />
+
                 <Route path="/admin/scheduling-page" element={<SchedulingPage />} />
                 <Route path="/admin/availability-page" element={<AdminAvailabilityPage />} />
                 <Route path="/admin/clients" element={userRole === 'admin' ? <Clients /> : <Navigate to="/login" />} />
