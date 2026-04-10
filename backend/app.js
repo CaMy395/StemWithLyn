@@ -2597,17 +2597,135 @@ app.get('/schedule/availability', async (req, res) => {
     }
 });
 
-app.get('/admin-availability', async (req, res) => {
-    try {
-        const result = await pool.query("SELECT * FROM weekly_availability ORDER BY weekday, start_time");
+// =========================
+// ADMIN WEEKLY AVAILABILITY
+// =========================
 
-        res.json(result.rows);
-    } catch (error) {
-        console.error("❌ Error fetching admin availability:", error);
-        res.status(500).json({ success: false, error: "Failed to fetch availability for admin." });
+// Get admin availability (optionally filtered)
+app.get('/admin-availability', async (req, res) => {
+  try {
+    const { weekday, appointmentType } = req.query;
+
+    let query = `
+      SELECT *
+      FROM weekly_availability
+      WHERE 1=1
+    `;
+    const values = [];
+    let i = 1;
+
+    if (weekday) {
+      query += ` AND LOWER(weekday) = LOWER($${i})`;
+      values.push(String(weekday).trim());
+      i++;
     }
+
+    if (appointmentType) {
+      query += ` AND LOWER(appointment_type) = LOWER($${i})`;
+      values.push(String(appointmentType).trim());
+      i++;
+    }
+
+    query += ` ORDER BY weekday, start_time`;
+
+    const result = await pool.query(query, values);
+    res.json(result.rows);
+  } catch (error) {
+    console.error("❌ Error fetching admin availability:", error);
+    res.status(500).json({ success: false, error: "Failed to fetch availability for admin." });
+  }
 });
 
+// Add weekly availability
+app.post('/admin-availability', async (req, res) => {
+  try {
+    const { weekday, start_time, end_time, appointment_type } = req.body || {};
+
+    if (!weekday || !start_time || !end_time || !appointment_type) {
+      return res.status(400).json({
+        success: false,
+        error: "weekday, start_time, end_time, and appointment_type are required.",
+      });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO weekly_availability (weekday, start_time, end_time, appointment_type)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+      `,
+      [weekday, start_time, end_time, appointment_type]
+    );
+
+    res.status(201).json({ success: true, availability: result.rows[0] });
+  } catch (error) {
+    console.error("❌ Error adding weekly availability:", error);
+    res.status(500).json({ success: false, error: "Failed to add availability." });
+  }
+});
+
+// Edit weekly availability
+app.patch('/admin-availability/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { weekday, start_time, end_time, appointment_type } = req.body || {};
+
+    if (!weekday || !start_time || !end_time || !appointment_type) {
+      return res.status(400).json({
+        success: false,
+        error: "weekday, start_time, end_time, and appointment_type are required.",
+      });
+    }
+
+    const existing = await pool.query(
+      `SELECT * FROM weekly_availability WHERE id = $1 LIMIT 1`,
+      [id]
+    );
+
+    if (existing.rowCount === 0) {
+      return res.status(404).json({ success: false, error: "Availability row not found." });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE weekly_availability
+      SET weekday = $1,
+          start_time = $2,
+          end_time = $3,
+          appointment_type = $4
+      WHERE id = $5
+      RETURNING *
+      `,
+      [weekday, start_time, end_time, appointment_type, id]
+    );
+
+    res.json({ success: true, availability: result.rows[0] });
+  } catch (error) {
+    console.error("❌ Error updating weekly availability:", error);
+    res.status(500).json({ success: false, error: "Failed to update availability." });
+  }
+});
+
+// Delete weekly availability
+app.delete('/admin-availability/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      `DELETE FROM weekly_availability WHERE id = $1 RETURNING *`,
+      [id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ success: false, error: "Availability row not found." });
+    }
+
+    res.json({ success: true, message: "Availability removed successfully." });
+  } catch (error) {
+    console.error("❌ Error deleting weekly availability:", error);
+    res.status(500).json({ success: false, error: "Failed to delete availability." });
+  }
+});
 
 app.get('/availability', async (req, res) => {
     try {

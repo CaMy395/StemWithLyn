@@ -53,6 +53,12 @@ const AdminDashboard = () => {
                         >
                             UM Session Log
                         </button>
+                        <button
+                            className="action-button"
+                            onClick={() => navigate('/admin/availability-page')}
+                        >
+                            Availability
+                        </button>
                     </div>
                 </section>
             </main>

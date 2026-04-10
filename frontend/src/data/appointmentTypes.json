@@ -1,4 +1,6 @@
 [
+  { "title": "Brent Wright Leadership Academy (1 hour)", "category": "Tutoring", "price": 0 },
+
   { "title": "Virtual Tutoring (1 hour, @ $50.00)", "category": "Tutoring", "price": 50 },
   { "title": "Virtual Tutoring Package (6 sessions, @ $250.00)", "category": "Tutoring", "price": 250 },
   { "title": "Virtual Tutoring Package (6 sessions - SCHEDULING)", "category": "Tutoring", "price": 0 },
