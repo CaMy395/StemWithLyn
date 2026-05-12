@@ -215,6 +215,7 @@ const Clients = () => {
             <select name="category" value={newClient.category} onChange={handleChange} required>
               <option value="StemwithLyn">StemwithLyn</option>
               <option value="United Mentors">United Mentors</option>
+              <option value="BWLA">B.Wright Leadership Academy</option>
               <option value="Above & Beyond Learning">Above & Beyond Learning</option>
               <option value="Club Z">Club Z</option>
             </select>

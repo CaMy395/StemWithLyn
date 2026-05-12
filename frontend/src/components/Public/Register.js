@@ -117,7 +117,7 @@ const Register = () => {
                     <button
                         type="submit"
                         style={{
-                            backgroundColor: '#8B0000',
+                            backgroundColor: '#dda0dd',
                             color: 'white',
                             border: 'none',
                             padding: '10px 20px',

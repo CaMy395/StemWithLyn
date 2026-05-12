@@ -18,6 +18,16 @@ const WelcomePage = () => {
                         ⚙️<br />Tech / Engineering
                     </div>
                 </Link>
+                <a 
+                href="https://epicsouthflorida.org/mentorship" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                style={{ textDecoration: 'none' }}
+                >
+                <div className="bubble-button">
+                    ⚙️<br />Epic Foundation Scholarship
+                </div>
+                </a>
                 <Link to="/login" style={{ textDecoration: 'none' }}>
                     <div className="bubble-button">
                         <br />Login
