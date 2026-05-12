@@ -23,6 +23,7 @@ import AdminAvailabilityPage from './components/Admin/AdminAvailabilityPage';
 import AdminDashboard from './components/Admin/AdminDashboard';
 import MentorSessionLog from './components/Admin/MentorSessionLog';
 import PaymentSuccess from './components/Public/PaymentSuccess';
+import ScholarshipsPage from './components/Public/ScholarshipsPage';
 
 import WebSocketProvider from './WebSocketProvider';
 import './App.css';
@@ -124,51 +125,160 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
     return (
         <div className={"app-container"}>
             {/* Navigation menu */}
-            {userRole && (
-                <nav className="app-nav">
-                    <div className="nav-left">
-                        <span className="welcome-message">Hi, {username || "User"}</span>
-                    </div>
-                    <div className="nav-center">
-                        <ul className="menu">
-                            
-                            {userRole === "admin" ? (
-                                <>
-                                <li><Link to="/admin">Home</Link></li>
+{/* Navigation menu */}
+<nav className="app-nav">
 
-                                    {/* Tasks & Forms */}
-                                    <li className="dropdown">
-                                        <span onClick={() => toggleDropdown("tasks")}>Tasks & Forms ▾</span>
-                                        {openDropdown === "tasks" && (
-                                            <ul className="dropdown-menu">
-                                                <Link to="/admin/mytasks">My Tasks</Link> -
-                                                <Link to="/admin/profits">My Profits</Link> -
-                                                <Link to="/admin/intake-forms"> Intake Forms {totalFormsCount > 0 && (<span className="notification-badge">{totalFormsCount}</span>)}</Link>
-                                            </ul>
-                                        )}
-                                    </li>
-                                
-                                    {/* Clients */}
-                                    <Link to="/admin/clients">Clients</Link>
+    {/* LEFT */}
+    <div className="nav-left">
+        <Link to="/">
+            <img
+                src="/stem-logo.png"
+                alt="STEM with Lyn"
+                className="stem-logo-img"
+            />
+        </Link>
+    </div>
 
-                                </>
-                            ) : (
-                                <ul className="menu">
-                                 <li><Link to="/client-portal">Home</Link></li>
-                                 <li><Link to="/client-portal/schedule">Book An Appointment</Link></li>
+    {/* CENTER */}
+    <div className="nav-center">
 
-                                </ul>
-                            )}
+        {/* =========================
+            NOT LOGGED IN
+        ========================== */}
+        {!userRole ? (
+            <ul className="menu">
+
+                <li>
+                    <Link to="/">Home</Link>
+                </li>
+
+                <li>
+                    <Link to="/tutoring-intake">Tutoring</Link>
+                </li>
+
+                <li>
+                    <Link to="/tech-engineering">
+                        Tech & Engineering
+                    </Link>
+                </li>
+
+                <li>
+                    <Link to="/scholarships">
+                        Scholarships
+                    </Link>
+                </li>
+
+            </ul>
+        ) : userRole === "admin" ? (
+
+            /* =========================
+                ADMIN NAV
+            ========================== */
+
+            <ul className="menu">
+
+                <li>
+                    <Link to="/admin">Home</Link>
+                </li>
+
+                {/* Tasks & Forms */}
+                <li className="dropdown">
+                    <span onClick={() => toggleDropdown("tasks")}>
+                        Tasks & Forms ▾
+                    </span>
+
+                    {openDropdown === "tasks" && (
+                        <ul className="dropdown-menu">
+
+                            <Link to="/admin/mytasks">
+                                My Tasks
+                            </Link>
+
+                            -
+
+                            <Link to="/admin/profits">
+                                My Profits
+                            </Link>
+
+                            -
+
+                            <Link to="/admin/intake-forms">
+                                Intake Forms
+
+                                {totalFormsCount > 0 && (
+                                    <span className="notification-badge">
+                                        {totalFormsCount}
+                                    </span>
+                                )}
+                            </Link>
+
                         </ul>
-                    </div>
+                    )}
+                </li>
 
-                    <div className="nav-right">
-                        <button className="logout-button" onClick={handleLogout}>
-                            Logout
-                        </button>
-                    </div>
-                </nav>
-            )}
+                <li>
+                    <Link to="/admin/clients">
+                        Clients
+                    </Link>
+                </li>
+
+            </ul>
+
+        ) : (
+
+            /* =========================
+                CLIENT PORTAL NAV
+            ========================== */
+
+            <ul className="menu">
+
+                <li>
+                    <Link to="/client-portal">
+                        Dashboard
+                    </Link>
+                </li>
+
+                <li>
+                    <Link to="/client-portal/schedule">
+                        Book Appointment
+                    </Link>
+                </li>
+
+            </ul>
+
+        )}
+    </div>
+
+    {/* RIGHT */}
+    <div className="nav-right">
+
+        {!userRole ? (
+
+            <Link to="/login">
+                <button className="logout-button">
+                    Login
+                </button>
+            </Link>
+
+        ) : (
+
+            <>
+                <span className="welcome-message">
+                    Hi, {username || "User"}
+                </span>
+
+                <button
+                    className="logout-button"
+                    onClick={handleLogout}
+                >
+                    Logout
+                </button>
+            </>
+
+        )}
+    </div>
+
+</nav>
 
             {/* Routes */}
             <Routes>    
@@ -196,7 +306,7 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
   }
 />
 
-
+<Route path="/scholarships" element={<ScholarshipsPage />} />
                 <Route path="/admin/scheduling-page" element={<SchedulingPage />} />
                 <Route path="/admin/availability-page" element={<AdminAvailabilityPage />} />
                 <Route path="/admin/clients" element={userRole === 'admin' ? <Clients /> : <Navigate to="/login" />} />

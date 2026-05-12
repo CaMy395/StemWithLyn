@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import "../../ClientPortalPage.css";
 
 const ClientPortalPage = () => {
   const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:3001";
@@ -241,7 +242,9 @@ const ClientPortalPage = () => {
       const blockedRes = await fetch(
         `${apiUrl}/blocked-times?date=${encodeURIComponent(selectedDate)}`
       );
-      const blockedData = blockedRes.ok ? await blockedRes.json() : { blockedTimes: [] };
+      const blockedData = blockedRes.ok
+        ? await blockedRes.json()
+        : { blockedTimes: [] };
 
       const bookedRes = await fetch(
         `${apiUrl}/appointments/by-date?date=${encodeURIComponent(selectedDate)}`
@@ -339,195 +342,149 @@ const ClientPortalPage = () => {
   };
 
   if (loading) {
-    return <div style={{ padding: 20 }}>Loading your portal…</div>;
+    return (
+      <div className="portal-page">
+        <div className="portal-shell">
+          <h1>Loading your portal…</h1>
+        </div>
+      </div>
+    );
   }
 
   if (!loggedInUser) {
     return (
-      <div style={{ padding: 20 }}>
-        Please log in to view your client portal.
+      <div className="portal-page">
+        <div className="portal-shell">
+          <h1>Please log in to view your client portal.</h1>
+        </div>
       </div>
     );
   }
 
   if (!canUsePortal) {
-    return <div style={{ padding: 20 }}>Admins do not use the client portal.</div>;
+    return (
+      <div className="portal-page">
+        <div className="portal-shell">
+          <h1>Admins do not use the client portal.</h1>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div
-      style={{
-        padding: 20,
-        maxWidth: 1050,
-        margin: "0 auto",
-      }}
-    >
-      <h1 style={{ marginBottom: 8 }}>Client Portal</h1>
-
-      {err && (
-        <div
-          style={{
-            background: "#ffe9e9",
-            border: "1px solid #ffb3b3",
-            padding: 12,
-            borderRadius: 10,
-            marginBottom: 14,
-            color: "#7a0000",
-            fontWeight: 600,
-          }}
-        >
-          {err}
-        </div>
-      )}
-
-      {!client ? (
-        <div
-          style={{
-            background: "#fff",
-            padding: 16,
-            borderRadius: 12,
-            color: "#111",
-          }}
-        >
-          Your client profile isn’t linked yet. Please contact support.
-        </div>
-      ) : (
-        <>
-          <div
-            style={{
-              background: "#fff",
-              padding: 18,
-              borderRadius: 14,
-              marginBottom: 18,
-              boxShadow: "0 6px 18px rgba(0,0,0,0.06)",
-            }}
-          >
-            <h2 style={{ marginTop: 0, marginBottom: 10 }}>Profile</h2>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 12,
-              }}
-            >
-              <div>
-                <b>Name:</b> {client.full_name}
-              </div>
-              <div>
-                <b>Email:</b> {client.email || "—"}
-              </div>
-              <div>
-                <b>Phone:</b> {client.phone || "—"}
-              </div>
-              <div>
-                <b>Category:</b> {client.category || "—"}
-              </div>
-            </div>
-
-            <div
-              style={{
-                marginTop: 10,
-                color: "#666",
-                fontSize: 13,
-              }}
-            >
-              Note: You can cancel or reschedule an appointment <b>once</b>. After
-              that, you’ll need to contact support.
-            </div>
+    <div className="portal-page">
+      <div className="portal-shell">
+        <section className="portal-hero">
+          <div>
+            <span className="portal-pill">STEM with Lyn Portal</span>
+            <h1>Welcome back{client?.full_name ? `, ${client.full_name}` : ""}</h1>
+            <p>
+              View your tutoring profile, upcoming sessions, appointment history,
+              and reschedule options.
+            </p>
           </div>
 
-          <div
-            style={{
-              background: "#fff",
-              padding: 18,
-              borderRadius: 14,
-              marginBottom: 18,
-              boxShadow: "0 6px 18px rgba(0,0,0,0.06)",
-            }}
-          >
-            <h2 style={{ marginTop: 0 }}>Upcoming Appointments</h2>
+          <div className="portal-hero-stat">
+            <span>{upcoming.length}</span>
+            <p>Upcoming</p>
+          </div>
+        </section>
 
-            {upcoming.length === 0 ? (
-              <div style={{ color: "#666" }}>No upcoming appointments.</div>
-            ) : (
-              <div style={{ display: "grid", gap: 12 }}>
-                {upcoming.map((a) => {
-                  const cancelUsed = (a.client_cancel_count || 0) >= 1;
-                  const reschedUsed = (a.client_reschedule_count || 0) >= 1;
+        {err && <div className="portal-error">{err}</div>}
 
-                  return (
-                    <div
-                      key={a.id}
-                      style={{
-                        border: "1px solid #eee",
-                        borderRadius: 12,
-                        padding: 14,
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 10,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <div>
-                          <div
-                            style={{
-                              fontSize: 16,
-                              fontWeight: 700,
-                              color: "#111",
-                            }}
-                          >
-                            {a.title || "Appointment"}
-                          </div>
+        {!client ? (
+          <div className="portal-card">
+            <h2>Profile Not Linked</h2>
+            <p>Your client profile isn’t linked yet. Please contact support.</p>
+          </div>
+        ) : (
+          <>
+            <section className="portal-card profile-card">
+              <div className="section-header">
+                <h2>Profile</h2>
+                <span>Student / Client Details</span>
+              </div>
 
-                          <div style={{ color: "#555" }}>
+              <div className="profile-grid">
+                <div>
+                  <small>Name</small>
+                  <strong>{client.full_name || "—"}</strong>
+                </div>
+
+                <div>
+                  <small>Email</small>
+                  <strong>{client.email || "—"}</strong>
+                </div>
+
+                <div>
+                  <small>Phone</small>
+                  <strong>{client.phone || "—"}</strong>
+                </div>
+
+                <div>
+                  <small>Category</small>
+                  <strong>{client.category || "—"}</strong>
+                </div>
+              </div>
+
+              <p className="portal-note">
+                You can cancel or reschedule an appointment <b>once</b>. After
+                that, please contact STEM with Lyn directly.
+              </p>
+            </section>
+
+            <section className="portal-card">
+              <div className="section-header">
+                <h2>Upcoming Appointments</h2>
+                <span>{upcoming.length} scheduled</span>
+              </div>
+
+              {upcoming.length === 0 ? (
+                <div className="empty-state">
+                  <h3>No upcoming appointments.</h3>
+                  <p>Book a session from the scheduling page when you are ready.</p>
+                </div>
+              ) : (
+                <div className="appointment-list">
+                  {upcoming.map((a) => {
+                    const cancelUsed = (a.client_cancel_count || 0) >= 1;
+                    const reschedUsed = (a.client_reschedule_count || 0) >= 1;
+
+                    return (
+                      <div key={a.id} className="appointment-card-portal">
+                        <div className="appt-main">
+                          <span className="appt-badge">Upcoming</span>
+                          <h3>{a.title || "Appointment"}</h3>
+
+                          <p>
                             {fmtDate(a.date)} at {fmtTime(a.time)}
-                          </div>
+                          </p>
 
                           {a.end_time && (
-                            <div style={{ color: "#777", marginTop: 4 }}>
+                            <p>
                               <b>Ends:</b> {fmtTime(a.end_time)}
-                            </div>
+                            </p>
                           )}
 
                           {a.location && (
-                            <div style={{ color: "#777", marginTop: 4 }}>
+                            <p>
                               <b>Location:</b> {a.location}
-                            </div>
+                            </p>
                           )}
 
-                          {a.description && (
-                            <div style={{ color: "#666", marginTop: 6 }}>
-                              {a.description}
-                            </div>
-                          )}
+                          {a.description && <p>{a.description}</p>}
                         </div>
 
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: 10,
-                            alignItems: "center",
-                            flexWrap: "wrap",
-                          }}
-                        >
+                        <div className="appt-actions">
                           <button
                             onClick={() => openReschedule(a)}
                             disabled={reschedUsed}
-                            style={{
-                              padding: "10px 14px",
-                              borderRadius: 10,
-                              border: "1px solid #ddd",
-                              background: reschedUsed ? "#f3f3f3" : "#fff",
-                              color: reschedUsed ? "#888" : "#111",
-                              cursor: reschedUsed ? "not-allowed" : "pointer",
-                              fontWeight: 600,
-                            }}
-                            title={reschedUsed ? "Reschedule already used" : "Reschedule"}
+                            className="portal-btn secondary"
+                            title={
+                              reschedUsed
+                                ? "Reschedule already used"
+                                : "Reschedule"
+                            }
                           >
                             Reschedule {reschedUsed ? "(used)" : ""}
                           </button>
@@ -535,279 +492,145 @@ const ClientPortalPage = () => {
                           <button
                             onClick={() => onCancel(a)}
                             disabled={cancelUsed}
-                            style={{
-                              padding: "10px 14px",
-                              borderRadius: 10,
-                              border: "1px solid #ffb3b3",
-                              background: cancelUsed ? "#f3f3f3" : "#ffe9e9",
-                              color: cancelUsed ? "#888" : "#7a0000",
-                              cursor: cancelUsed ? "not-allowed" : "pointer",
-                              fontWeight: 600,
-                            }}
+                            className="portal-btn danger"
                             title={cancelUsed ? "Cancel already used" : "Cancel"}
                           >
                             Cancel {cancelUsed ? "(used)" : ""}
                           </button>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div
-            style={{
-              background: "#fff",
-              padding: 18,
-              borderRadius: 14,
-              boxShadow: "0 6px 18px rgba(0,0,0,0.06)",
-            }}
-          >
-            <h2 style={{ marginTop: 0 }}>Appointment History</h2>
-
-            {past.length === 0 ? (
-              <div style={{ color: "#666" }}>No past appointments yet.</div>
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
-                {past.map((a) => (
-                  <div
-                    key={a.id}
-                    style={{
-                      border: "1px solid #eee",
-                      borderRadius: 12,
-                      padding: 12,
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontWeight: 700,
-                        color: "#111",
-                      }}
-                    >
-                      {a.title || "Appointment"}
-                    </div>
-
-                    <div style={{ color: "#555" }}>
-                      {fmtDate(a.date)} at {fmtTime(a.time)}
-                    </div>
-
-                    {a.end_time && (
-                      <div style={{ color: "#777", marginTop: 4 }}>
-                        <b>Ended:</b> {fmtTime(a.end_time)}
-                      </div>
-                    )}
-
-                    {a.description && (
-                      <div style={{ color: "#666", marginTop: 6 }}>
-                        {a.description}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </>
-      )}
-
-      {showReschedule && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.35)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 18,
-            zIndex: 9999,
-          }}
-          onClick={closeReschedule}
-        >
-          <div
-            style={{
-              width: "min(560px, 100%)",
-              background: "#fff",
-              borderRadius: 16,
-              padding: 18,
-              boxShadow: "0 12px 34px rgba(0,0,0,0.18)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 style={{ marginTop: 0, color: "#111" }}>Reschedule Appointment</h3>
-
-            {reschedAppt && (
-              <div
-                style={{
-                  marginBottom: 14,
-                  padding: 12,
-                  borderRadius: 10,
-                  background: "#f8f8f8",
-                  border: "1px solid #eee",
-                  color: "#111",
-                }}
-              >
-                <div style={{ fontWeight: 700 }}>
-                  {reschedAppt.title || "Appointment"}
+                    );
+                  })}
                 </div>
-                <div style={{ color: "#555", marginTop: 4 }}>
-                  Current: {fmtDate(reschedAppt.date)} at {fmtTime(reschedAppt.time)}
+              )}
+            </section>
+
+            <section className="portal-card">
+              <div className="section-header">
+                <h2>Appointment History</h2>
+                <span>{past.length} past</span>
+              </div>
+
+              {past.length === 0 ? (
+                <div className="empty-state">
+                  <h3>No past appointments yet.</h3>
+                  <p>Your completed tutoring sessions will show here.</p>
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="appointment-list">
+                  {past.map((a) => (
+                    <div key={a.id} className="appointment-card-portal past">
+                      <div className="appt-main">
+                        <span className="appt-badge muted">Completed</span>
+                        <h3>{a.title || "Appointment"}</h3>
 
-            <label
-              style={{
-                display: "grid",
-                gap: 6,
-                color: "#111",
-                fontWeight: 600,
-                marginBottom: 14,
-              }}
-            >
-              New Date
-              <input
-                type="date"
-                value={newDate}
-                onChange={async (e) => {
-                  const value = e.target.value;
-                  setNewDate(value);
-                  await fetchRescheduleAvailability(reschedAppt, value);
-                }}
-                style={{
-                  padding: 10,
-                  borderRadius: 10,
-                  border: "1px solid #ddd",
-                  background: "#fff",
-                  color: "#111",
-                }}
-              />
-            </label>
+                        <p>
+                          {fmtDate(a.date)} at {fmtTime(a.time)}
+                        </p>
 
-            <div style={{ marginBottom: 8, color: "#111", fontWeight: 600 }}>
-              Available Time Slots
-            </div>
+                        {a.end_time && (
+                          <p>
+                            <b>Ended:</b> {fmtTime(a.end_time)}
+                          </p>
+                        )}
 
-            {loadingRescheduleSlots ? (
-              <div style={{ color: "#666", marginBottom: 14 }}>
-                Loading available times…
-              </div>
-            ) : rescheduleSlots.length === 0 ? (
-              <div
-                style={{
-                  color: "#7a0000",
-                  background: "#fff4f4",
-                  border: "1px solid #ffd2d2",
-                  borderRadius: 10,
-                  padding: 12,
-                  marginBottom: 14,
-                }}
-              >
-                No available time slots for that date.
-              </div>
-            ) : (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
-                  gap: 10,
-                  marginBottom: 14,
-                }}
-              >
-                {rescheduleSlots.map((slot) => {
-                  const slotTime = String(slot.start_time).slice(0, 5);
-                  const selected = String(newTime).slice(0, 5) === slotTime;
+                        {a.description && <p>{a.description}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </>
+        )}
 
-                  return (
-                    <button
-                      key={`${newDate}-${slot.start_time}-${slot.end_time}`}
-                      type="button"
-                      onClick={() => setNewTime(slotTime)}
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: 10,
-                        border: selected ? "2px solid #222" : "1px solid #ddd",
-                        background: selected ? "#222" : "#fff",
-                        color: selected ? "#fff" : "#111",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {fmtTime(slot.start_time)}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {newTime && (
-              <div
-                style={{
-                  fontSize: 13,
-                  color: "#555",
-                  marginBottom: 8,
-                }}
-              >
-                Selected time: <b>{fmtTime(newTime)}</b>
-              </div>
-            )}
-
+        {showReschedule && (
+          <div className="portal-modal-backdrop" onClick={closeReschedule}>
             <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: 10,
-                marginTop: 16,
-                flexWrap: "wrap",
-              }}
+              className="portal-modal"
+              onClick={(e) => e.stopPropagation()}
             >
-              <button
-                onClick={closeReschedule}
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 10,
-                  border: "1px solid #ddd",
-                  background: "#fff",
-                  color: "#111",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                Close
-              </button>
+              <h3>Reschedule Appointment</h3>
 
-              <button
-                onClick={submitReschedule}
-                disabled={!newDate || !newTime}
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 10,
-                  border: "1px solid #222",
-                  background: !newDate || !newTime ? "#bbb" : "#222",
-                  color: "#fff",
-                  fontWeight: 600,
-                  cursor: !newDate || !newTime ? "not-allowed" : "pointer",
-                }}
-              >
-                Confirm Reschedule
-              </button>
-            </div>
+              {reschedAppt && (
+                <div className="modal-current-appt">
+                  <strong>{reschedAppt.title || "Appointment"}</strong>
+                  <p>
+                    Current: {fmtDate(reschedAppt.date)} at{" "}
+                    {fmtTime(reschedAppt.time)}
+                  </p>
+                </div>
+              )}
 
-            <div
-              style={{
-                marginTop: 10,
-                fontSize: 12,
-                color: "#666",
-              }}
-            >
-              Reminder: rescheduling is allowed <b>once</b>. If you already used
-              it, you’ll need to contact support.
+              <label className="portal-modal-label">
+                New Date
+                <input
+                  type="date"
+                  value={newDate}
+                  onChange={async (e) => {
+                    const value = e.target.value;
+                    setNewDate(value);
+                    await fetchRescheduleAvailability(reschedAppt, value);
+                  }}
+                />
+              </label>
+
+              <div className="modal-slot-title">Available Time Slots</div>
+
+              {loadingRescheduleSlots ? (
+                <div className="modal-message">Loading available times…</div>
+              ) : rescheduleSlots.length === 0 ? (
+                <div className="modal-warning">
+                  No available time slots for that date.
+                </div>
+              ) : (
+                <div className="modal-slot-grid">
+                  {rescheduleSlots.map((slot) => {
+                    const slotTime = String(slot.start_time).slice(0, 5);
+                    const selected = String(newTime).slice(0, 5) === slotTime;
+
+                    return (
+                      <button
+                        key={`${newDate}-${slot.start_time}-${slot.end_time}`}
+                        type="button"
+                        onClick={() => setNewTime(slotTime)}
+                        className={selected ? "slot-choice selected" : "slot-choice"}
+                      >
+                        {fmtTime(slot.start_time)}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {newTime && (
+                <p className="selected-time">
+                  Selected time: <b>{fmtTime(newTime)}</b>
+                </p>
+              )}
+
+              <div className="modal-actions">
+                <button onClick={closeReschedule} className="portal-btn secondary">
+                  Close
+                </button>
+
+                <button
+                  onClick={submitReschedule}
+                  disabled={!newDate || !newTime}
+                  className="portal-btn primary"
+                >
+                  Confirm Reschedule
+                </button>
+              </div>
+
+              <p className="modal-note">
+                Reminder: rescheduling is allowed <b>once</b>. If you already
+                used it, you’ll need to contact support.
+              </p>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

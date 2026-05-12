@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import axios from "axios";
 import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
+import "../../ClientSchedulingPage.css";
 import appointmentTypes from "../../data/appointmentTypes.json";
 
 const ClientSchedulingPage = ({ portalMode = false }) => {

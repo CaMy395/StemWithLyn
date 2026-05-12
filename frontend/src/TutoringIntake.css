@@ -1,0 +1,279 @@
+.tutoring-intake-page {
+  min-height: 100vh;
+
+  background-image:
+    linear-gradient(
+      rgba(18, 8, 42, 0.45),
+      rgba(18, 8, 42, 0.72)
+    ),
+    url("/public/TutoringBackground.png");
+
+  background-size: cover;
+  background-position: center top;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+
+  color: white;
+}
+
+.tutoring-intake-overlay {
+  min-height: 100vh;
+  padding: 70px 20px;
+}
+
+/* MAIN CONTAINER */
+
+.intake-form-container {
+  max-width: 900px;
+  margin: 0 auto;
+
+  padding: 45px;
+
+  border-radius: 28px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(28, 14, 58, 0.96),
+      rgba(42, 20, 82, 0.92)
+    );
+
+  border: 1px solid rgba(183, 148, 255, 0.28);
+
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.55),
+    0 0 40px rgba(139, 92, 246, 0.10);
+
+  backdrop-filter: blur(18px);
+}
+
+/* HEADER */
+
+.intake-header {
+  text-align: center;
+  margin-bottom: 35px;
+}
+
+.intake-pill {
+  display: inline-block;
+
+  margin-bottom: 16px;
+
+  padding: 8px 18px;
+
+  border-radius: 999px;
+
+  background: rgba(139, 92, 246, 0.22);
+
+  border: 1px solid rgba(199, 178, 255, 0.55);
+
+  color: #f4efff;
+
+  font-weight: 700;
+
+  font-size: 0.95rem;
+
+  letter-spacing: 0.3px;
+}
+
+.intake-header h1 {
+  margin: 0 0 18px;
+
+  color: #f0b6ff;
+
+  font-size: 3rem;
+
+  font-weight: 800;
+
+  text-shadow:
+    0 4px 18px rgba(0,0,0,0.55);
+}
+
+.intake-header p {
+  margin: 0 auto;
+
+  max-width: 680px;
+
+  color: rgba(255,255,255,0.92);
+
+  line-height: 1.7;
+
+  font-size: 1.08rem;
+}
+
+.intake-subtext {
+  margin-top: 12px !important;
+
+  color: #d7b8ff !important;
+
+  font-weight: 600;
+}
+
+/* FORM */
+
+.intake-form {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+/* TWO COLUMN ROWS */
+
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+
+/* LABELS */
+
+.intake-form label {
+  display: flex;
+  flex-direction: column;
+
+  gap: 9px;
+
+  color: white;
+
+  font-weight: 700;
+
+  text-align: left;
+
+  font-size: 1rem;
+}
+
+/* INPUTS */
+
+.intake-form input,
+.intake-form select,
+.intake-form textarea {
+  width: 100%;
+
+  border: 1px solid rgba(199, 178, 255, 0.28);
+
+  border-radius: 16px;
+
+  padding: 15px 16px;
+
+  background: rgba(255, 255, 255, 0.97);
+
+  color: #1d1230;
+
+  font-size: 1rem;
+
+  outline: none;
+
+  box-sizing: border-box;
+
+  transition: all 0.2s ease;
+}
+
+.intake-form textarea {
+  resize: vertical;
+  min-height: 120px;
+}
+
+.intake-form input:focus,
+.intake-form select:focus,
+.intake-form textarea:focus {
+  border-color: #c7b2ff;
+
+  box-shadow:
+    0 0 0 4px rgba(167, 139, 250, 0.22),
+    0 0 18px rgba(167, 139, 250, 0.18);
+
+  transform: translateY(-1px);
+}
+
+/* BUTTON */
+
+.intake-submit-btn {
+  margin-top: 12px;
+
+  width: 100%;
+
+  border: none;
+
+  border-radius: 18px;
+
+  padding: 18px 24px;
+
+  background:
+    linear-gradient(
+      135deg,
+      #8b5cf6,
+      #dca0f2
+    );
+
+  color: white;
+
+  font-size: 1.08rem;
+
+  font-weight: 800;
+
+  cursor: pointer;
+
+  transition: all 0.25s ease;
+
+  box-shadow:
+    0 12px 30px rgba(124, 58, 237, 0.35);
+}
+
+.intake-submit-btn:hover {
+  transform: translateY(-3px);
+
+  box-shadow:
+    0 18px 40px rgba(124, 58, 237, 0.5);
+
+  filter: brightness(1.05);
+}
+
+/* MOBILE */
+
+@media (max-width: 768px) {
+
+  .tutoring-intake-page {
+    background-attachment: scroll;
+  }
+
+  .tutoring-intake-overlay {
+    padding: 45px 16px;
+  }
+
+  .intake-form-container {
+    padding: 30px 20px;
+    border-radius: 22px;
+  }
+
+  .intake-header h1 {
+    font-size: 2.2rem;
+  }
+
+  .intake-header p {
+    font-size: 1rem;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.intake-form label,
+.intake-form label *,
+.form-row label,
+.form-row label * {
+color: #f4efff !important;
+}
+
+.intake-form input,
+.intake-form select,
+.intake-form textarea {
+  color: #1a102b !important;
+  background: rgba(255, 255, 255, 0.97) !important;
+}
+
+.intake-form input::placeholder,
+.intake-form textarea::placeholder {
+  color: #6b6280 !important;
+  opacity: 1;
+}

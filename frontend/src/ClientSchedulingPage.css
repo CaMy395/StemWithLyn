@@ -1,0 +1,227 @@
+.client-scheduling {
+  min-height: 100vh;
+  padding: 70px 20px;
+  color: white;
+
+  background-image:
+    linear-gradient(
+      rgba(18, 8, 42, 0.18),
+      rgba(18, 8, 42, 0.42)
+    ),
+    url("/public/TutoringBackground.png");
+
+  background-size: cover;
+  background-position: center top;
+  background-repeat: no-repeat;
+  background-attachment: scroll;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  position: relative;
+}
+
+.client-scheduling h2 {
+  color: #f0b6ff;
+  font-size: 3rem;
+  font-weight: 800;
+  margin-bottom: 30px;
+  text-align: center;
+  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.55);
+}
+
+.client-scheduling label,
+.client-scheduling h3,
+.client-scheduling p {
+  color: white !important;
+  font-weight: 700;
+}
+
+.client-scheduling label {
+  width: 100%;
+  max-width: 760px;
+  margin: 14px 0 8px;
+  font-size: 1rem;
+  text-align: left;
+}
+
+.client-scheduling input,
+.client-scheduling select {
+  width: 100%;
+  max-width: 760px;
+  padding: 15px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(199, 178, 255, 0.35);
+  background: rgba(255, 255, 255, 0.97);
+  color: #1d1230 !important;
+  font-size: 1rem;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.client-scheduling input::placeholder {
+  color: #6b6280;
+  opacity: 1;
+}
+
+.client-scheduling input:focus,
+.client-scheduling select:focus {
+  border-color: #c7b2ff;
+  box-shadow: 0 0 0 4px rgba(167, 139, 250, 0.22);
+}
+
+.client-scheduling > input,
+.client-scheduling > select,
+.client-scheduling > label,
+.client-scheduling > h2,
+.client-scheduling > h3,
+.client-scheduling > ul,
+.client-scheduling > .react-calendar {
+  position: relative;
+  z-index: 1;
+}
+
+.client-scheduling::before {
+  content: "";
+
+  width: min(900px, calc(100% - 30px));
+
+  min-height: calc(100% - 70px);
+
+  position: absolute;
+
+  top: 35px;
+
+  border-radius: 32px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(24, 12, 52, 0.68),
+      rgba(40, 20, 72, 0.58)
+    );
+
+  border: 1px solid rgba(183, 148, 255, 0.18);
+
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.38);
+
+  backdrop-filter: blur(12px);
+
+  z-index: 0;
+}
+
+/* CALENDAR */
+
+.react-calendar {
+  width: 100%;
+  max-width: 760px;
+  margin-top: 12px;
+  border-radius: 22px;
+  border: 1px solid rgba(199, 178, 255, 0.35) !important;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.97) !important;
+  color: #1d1230;
+  padding: 12px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+}
+
+.react-calendar button {
+  color: #1d1230;
+  border-radius: 12px;
+}
+
+.react-calendar__tile--active {
+  background: #8b5cf6 !important;
+  color: white !important;
+}
+
+.react-calendar__tile--now {
+  background: #eadcff !important;
+}
+
+/* AVAILABLE SLOTS */
+
+.client-scheduling ul {
+  width: 100%;
+  max-width: 760px;
+  padding: 0;
+  margin-top: 10px;
+}
+
+.available-slot {
+  list-style: none;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(199, 178, 255, 0.35);
+  border-radius: 18px;
+  padding: 16px;
+  margin-bottom: 14px;
+  color: white;
+
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+}
+
+.available-slot button {
+  border: none;
+  border-radius: 14px;
+  padding: 12px 18px;
+  background: linear-gradient(135deg, #8b5cf6, #dca0f2);
+  color: white;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 10px 25px rgba(124, 58, 237, 0.35);
+}
+
+.available-slot button:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.05);
+}
+
+.available-slot button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+  .client-scheduling {
+    padding: 45px 16px 240px !important;
+  }
+
+
+  .client-scheduling::before {
+    top: 20px;
+    width: calc(100% - 20px);
+  }
+
+  .client-scheduling h2 {
+    font-size: 2.2rem;
+  }
+
+  .available-slot {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+  }
+
+  .available-slot button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .client-scheduling {
+    padding-bottom: 260px !important;
+  }
+
+  .client-scheduling::after {
+    content: "";
+    display: block;
+    width: 100%;
+    height: 220px;
+    flex-shrink: 0;
+  }
+}

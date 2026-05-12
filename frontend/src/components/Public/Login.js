@@ -17,7 +17,10 @@ const Login = ({ onLogin }) => {
       stored = null;
     }
 
-    const role = stored?.role || localStorage.getItem("role") || localStorage.getItem("userRole");
+    const role =
+      stored?.role ||
+      localStorage.getItem("role") ||
+      localStorage.getItem("userRole");
 
     if (role) {
       onLogin(role);
@@ -45,7 +48,7 @@ const Login = ({ onLogin }) => {
         throw new Error(txt || "Login failed.");
       }
 
-      const data = await response.json(); // {id, role, username, name, email, phone}
+      const data = await response.json();
 
       localStorage.setItem("username", data.username);
       localStorage.setItem("role", data.role);
@@ -64,37 +67,63 @@ const Login = ({ onLogin }) => {
   };
 
   return (
-    <div className="login-page">
-      <div className="login-container">
-        <form onSubmit={handleSubmit}>
-          <h2>Login</h2>
+    <div className="login-page stem-login-page">
+      <div className="login-container stem-login-card">
+        <div className="login-brand">
+          <img
+            src="/stem-logo.png"
+            alt="STEM with Lyn"
+            className="login-logo"
+          />
 
-          {error && <p style={{ color: "red" }}>{error}</p>}
+          <span className="login-pill">Student Portal</span>
+
+          <h2>Welcome Back</h2>
+
+          <p>
+            Log in to book tutoring, view appointments, and manage your STEM
+            support.
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="stem-login-form">
+          {error && <div className="login-error">{error}</div>}
 
           <label>
-            Username:
-            <input value={username} onChange={(e) => setUsername(e.target.value)} required />
+            Username
+            <input
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="Enter your username"
+              required
+            />
           </label>
 
           <label>
-            Password:
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            Password
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter your password"
+              required
+            />
           </label>
 
-          <br />
-
-          <button type="submit" disabled={loading}>
+          <button type="submit" disabled={loading} className="login-submit-btn">
             {loading ? "Logging in..." : "Login"}
           </button>
         </form>
 
-        <p className="link-to-other">
-          Don&apos;t have an account? <Link to="/register">Register here</Link>
-        </p>
+        <div className="login-links">
+          <p>
+            Don&apos;t have an account? <Link to="/register">Register here</Link>
+          </p>
 
-        <p className="forgot-password">
-          <Link to="/forgot-password">Forgot Password?</Link>
-        </p>
+          <p>
+            <Link to="/forgot-password">Forgot Password?</Link>
+          </p>
+        </div>
       </div>
     </div>
   );

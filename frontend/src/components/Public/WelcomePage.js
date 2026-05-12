@@ -1,42 +1,97 @@
 import React from "react";
 import { Link } from "react-router-dom";
+import "../../WelcomePage.css";
 
 const WelcomePage = () => {
     return (
         <div className="welcome-page">
-            <h1 style={{ color: '#D894D2' }}>Welcome to STEM with Lyn</h1>
-            <p>Please choose an option to get started:</p>
-    
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '50px', marginTop: '50px' }}>
-                <Link to="/tutoring-intake" style={{ textDecoration: 'none' }}>
-                    <div className="bubble-button">
-                        🧠<br />Tutoring
-                    </div>
-                </Link>
-                <Link to="/tech-engineering" style={{ textDecoration: 'none' }}>
-                    <div className="bubble-button">
-                        ⚙️<br />Tech / Engineering
-                    </div>
-                </Link>
-                <a 
-                href="https://epicsouthflorida.org/mentorship" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                style={{ textDecoration: 'none' }}
-                >
-                <div className="bubble-button">
-                    ⚙️<br />Epic Foundation Scholarship
+            <div className="welcome-overlay">
+
+                {/* HERO */}
+                <div className="welcome-hero">
+                    <h1>Welcome to STEM with Lyn</h1>
+
+                    <p>
+                        Empowering students through tutoring, technology,
+                        engineering, and scholarship opportunities.
+                    </p>
                 </div>
-                </a>
-                <Link to="/login" style={{ textDecoration: 'none' }}>
-                    <div className="bubble-button">
-                        <br />Login
+
+                {/* MAIN BUTTONS */}
+                <div className="welcome-buttons">
+
+                    {/* Tutoring */}
+                    <Link
+                        to="/tutoring-intake"
+                        style={{ textDecoration: "none" }}
+                    >
+                        <div className="bubble-button">
+                            <span>🧠</span>
+                            <p>Tutoring</p>
+                        </div>
+                    </Link>
+
+                    {/* Tech */}
+                    <Link
+                        to="/tech-engineering"
+                        style={{ textDecoration: "none" }}
+                    >
+                        <div className="bubble-button">
+                            <span>⚙️</span>
+                            <p>Tech & Engineering</p>
+                        </div>
+                    </Link>
+
+                    {/* Scholarships */}
+                    <Link
+                        to="/scholarships"
+                        style={{ textDecoration: "none" }}
+                    >
+                        <div className="bubble-button featured-bubble">
+                            <span>🎓</span>
+                            <p>Scholarships & Funding</p>
+                        </div>
+                    </Link>
+
+                </div>
+
+                {/* INFO CARDS */}
+                <div className="welcome-info-grid">
+
+                    <div className="welcome-card">
+                        <h3>📚 Academic Support</h3>
+
+                        <p>
+                            Personalized STEM tutoring designed to help
+                            students build confidence, improve grades,
+                            and close learning gaps.
+                        </p>
                     </div>
-                </Link>
+
+                    <div className="welcome-card">
+                        <h3>💻 Tech Opportunities</h3>
+
+                        <p>
+                            Explore coding, robotics, engineering,
+                            technology, and future STEM career pathways.
+                        </p>
+                    </div>
+
+                    <div className="welcome-card">
+                        <h3>🎓 Scholarship Help</h3>
+
+                        <p>
+                            Learn about Step Up For Students and
+                            Epic Foundation scholarship opportunities
+                            available for eligible students.
+                        </p>
+                    </div>
+
+                </div>
+
             </div>
         </div>
     );
-    
 };
 
 export default WelcomePage;
