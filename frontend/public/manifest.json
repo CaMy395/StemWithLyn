@@ -3,12 +3,12 @@
   "name": "Stem with Lyn",
   "icons": [
     {
-      "src": "stem-logo.png",
+      "src": "stem-logo-512.png",
       "type": "image/png",
       "sizes": "192x192"
     },
     {
-      "src": "stem-logo.png",
+      "src": "stem-logo-512.png",
       "type": "image/png",
       "sizes": "512x512"
     }
