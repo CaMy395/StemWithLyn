@@ -566,7 +566,7 @@ const safeEndTime = endTime ? String(endTime) : "";
                                                         >
 
 {clients.find((c) => Number(c.id) === Number(appointment.client_id))?.full_name || 'Unknown'} - {appointment.title}
-                                                            {appointment.title}
+                                                    
                                                         </div>
                                                     );
                                                 })}
@@ -596,7 +596,7 @@ const safeEndTime = endTime ? String(endTime) : "";
     };
 
     return (
-        <div>
+        <div className="scheduling-page">
             <h2>Scheduling Page</h2>
             
             {weekView()}
