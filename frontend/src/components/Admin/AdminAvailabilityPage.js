@@ -155,8 +155,9 @@ const AdminAvailabilityPage = () => {
   }, {});
 
   return (
-    <div className="admin-availability" style={{ padding: "20px" }}>
-      <h2>{editingId ? "Edit Weekly Availability" : "Set Weekly Availability"}</h2>
+    <main className="admin-availability availability-workspace">
+      <header className="availability-header"><div><span>ADMIN WORKSPACE</span><h1>Availability</h1><p>Control which services clients can book each week.</p></div></header>
+      <section className="availability-editor"><h2>{editingId ? "Edit weekly availability" : "Add weekly availability"}</h2>
 
       <label>Select weekday, start/end time, and appointment type:</label>
 
@@ -213,6 +214,7 @@ const AdminAvailabilityPage = () => {
           <button onClick={addAvailability}>Add Availability</button>
         )}
       </div>
+      </section>
 
       <h3>Filter Availability</h3>
 
@@ -306,7 +308,7 @@ const AdminAvailabilityPage = () => {
           </div>
         )}
       </div>
-    </div>
+    </main>
   );
 };
 

@@ -1,101 +1,14 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import "../../ScholarshipsPage.css";
 
-const ScholarshipsPage = () => {
-  return (
-    <div className="scholarships-page">
-      <div className="scholarships-overlay">
-
-        <div className="scholarships-hero">
-          <span className="hero-pill">
-            STEM with Lyn • Funding Resources
-          </span>
-
-          <h1>Scholarships & Educational Funding</h1>
-
-          <p>
-            Explore programs that may help cover tutoring, educational services,
-            technology, STEM learning opportunities, and academic support.
-          </p>
-        </div>
-
-        <div className="scholarship-grid">
-
-          {/* STEP UP */}
-
-          <div className="scholarship-card">
-            <div className="scholarship-icon">🎓</div>
-
-            <h2>Step Up For Students</h2>
-
-            <p>
-              Florida scholarship program supporting students with educational
-              funding opportunities including tutoring, private instruction,
-              learning support, and specialized educational needs.
-            </p>
-
-            <ul>
-              <li>Private tutoring support</li>
-              <li>Educational expenses</li>
-              <li>Learning accommodations</li>
-              <li>Florida scholarship programs</li>
-            </ul>
-
-            <a
-              href="https://www.stepupforstudents.org"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="scholarship-btn"
-            >
-              Visit Step Up
-            </a>
-          </div>
-
-          {/* EPIC */}
-
-          <div className="scholarship-card featured-card">
-            <div className="scholarship-icon">⚙️</div>
-
-            <h2>Epic Foundation</h2>
-
-            <p>
-              STEM mentorship and scholarship opportunities helping students
-              explore technology, engineering, robotics, coding, innovation,
-              and future career pathways.
-            </p>
-
-            <ul>
-              <li>STEM mentorship</li>
-              <li>Technology opportunities</li>
-              <li>Engineering exposure</li>
-              <li>Future career pathways</li>
-            </ul>
-
-            <a
-              href="https://epicsouthflorida.org/mentorship"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="scholarship-btn"
-            >
-              Explore Epic Foundation
-            </a>
-          </div>
-
-        </div>
-
-        <div className="scholarship-bottom">
-          <h3>Need Help Getting Started?</h3>
-
-          <p>
-            If you are unsure which program may apply to your student,
-            STEM with Lyn can help guide families toward educational
-            support resources and tutoring pathways.
-          </p>
-        </div>
-
-      </div>
-    </div>
-  );
-};
-
+const ScholarshipsPage = () => <main className="funding-page">
+  <section className="funding-hero"><div className="funding-hero__copy"><span className="funding-kicker">Funding resources for families</span><h1>More ways to make learning support possible.</h1><p>Explore scholarship and mentorship programs that can help students access tutoring, technology, STEM enrichment, and specialized educational support.</p><div className="funding-hero__actions"><a href="#programs" className="funding-primary">Explore programs <span>↓</span></a><Link to="/tutoring-intake" className="funding-secondary">Start tutoring intake</Link></div></div><div className="funding-hero__note"><span>Good to know</span><p>Programs set their own eligibility, covered expenses, and application timelines. Always confirm current details directly with the provider.</p></div></section>
+  <section className="funding-programs" id="programs"><Heading eyebrow="Featured resources" title="Find the pathway that fits your student" text="Start with the overview, then visit the official site to review requirements and apply." /><div className="funding-grid"><Program tone="purple" initials="SU" tag="Florida families" title="Step Up For Students" text="Scholarship programs that help eligible Florida families personalize their student’s education and access approved learning services." label="May support" items={["Private tutoring and instruction", "Educational expenses and materials", "Specialized learning needs", "Personalized education options"]} url="https://www.stepupforstudents.org" action="Visit official website" /><Program tone="pink" initials="EP" tag="STEM mentorship" title="EPIC Foundation" text="Mentorship and enrichment opportunities that introduce students to technology, engineering, robotics, coding, and future careers." label="Great for" items={["STEM mentorship and role models", "Technology skill development", "Engineering and innovation exposure", "College and career exploration"]} url="https://epicsouthflorida.org/mentorship" action="Explore mentorship" /></div></section>
+  <section className="funding-steps"><Heading eyebrow="Before you apply" title="A simple way to get started" /><div className="funding-step-grid"><Step n="01" title="Check eligibility" text="Review residency, student, income, and program-specific requirements." /><Step n="02" title="Gather documents" text="Prepare school, household, and student records requested by the provider." /><Step n="03" title="Confirm coverage" text="Ask whether tutoring or your selected service is an approved expense." /></div></section>
+  <section className="funding-cta"><div><span>Need a learning plan first?</span><h2>Tell me what your student needs.</h2><p>Complete a quick intake and we’ll move from questions to a clear tutoring plan.</p></div><Link to="/tutoring-intake">Start tutoring intake <span>→</span></Link></section>
+</main>;
+const Heading = ({ eyebrow, title, text }) => <div className="funding-section-heading"><span>{eyebrow}</span><h2>{title}</h2>{text && <p>{text}</p>}</div>;
+const Program = ({ tone, initials, tag, title, text, label, items, url, action }) => <article className={`funding-card funding-card--${tone}`}><div className="funding-card__top"><span className="funding-card__icon">{initials}</span><span className="funding-card__tag">{tag}</span></div><h3>{title}</h3><p>{text}</p><div className="funding-card__details"><b>{label}</b><ul>{items.map((item) => <li key={item}>{item}</li>)}</ul></div><a href={url} target="_blank" rel="noopener noreferrer">{action} <span>↗</span></a></article>;
+const Step = ({ n, title, text }) => <div><em>{n}</em><h3>{title}</h3><p>{text}</p></div>;
 export default ScholarshipsPage;

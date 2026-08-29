@@ -1,284 +1,113 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { FaCheckCircle, FaEdit, FaEnvelope, FaPhone, FaPlus, FaSearch, FaTimes, FaTrash, FaUser, FaUserLock, FaUsers } from "react-icons/fa";
+
+const emptyClient = { full_name: "", email: "", phone: "", category: "StemwithLyn" };
+const categories = ["StemwithLyn", "United Mentors", "BWLA", "Above & Beyond Learning", "Club Z"];
+const initials = (name = "") => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "?";
 
 const Clients = () => {
   const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:3001";
-
   const [clients, setClients] = useState([]);
   const [showForm, setShowForm] = useState(false);
-  const [newClient, setNewClient] = useState({
-    full_name: "",
-    email: "",
-    phone: "",
-    category: "StemwithLyn",
-  });
+  const [clientForm, setClientForm] = useState(emptyClient);
   const [editClient, setEditClient] = useState(null);
-
   const [busyId, setBusyId] = useState(null);
-  const [msg, setMsg] = useState("");
-  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState({ type: "", text: "" });
+  const [query, setQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("All");
 
-  const fetchClients = async () => {
+  const fetchClients = useCallback(async () => {
+    setLoading(true);
     try {
-      setErr("");
       const response = await fetch(`${apiUrl}/api/clients`);
-      if (response.ok) {
-        const data = await response.json();
-        data.sort((a, b) => (a.full_name || "").localeCompare(b.full_name || ""));
-        setClients(data);
-      } else {
-        const t = await response.text();
-        throw new Error(t || "Failed to fetch clients");
-      }
+      if (!response.ok) throw new Error((await response.text()) || "Failed to fetch clients.");
+      const data = await response.json();
+      setClients((Array.isArray(data) ? data : []).sort((a, b) => (a.full_name || "").localeCompare(b.full_name || "")));
     } catch (error) {
-      console.error("Error fetching clients:", error);
-      setErr(error?.message || "Failed to fetch clients");
-    }
-  };
+      setMessage({ type: "error", text: error.message || "Failed to fetch clients." });
+    } finally { setLoading(false); }
+  }, [apiUrl]);
 
-  useEffect(() => {
-    fetchClients();
-  }, []);
+  useEffect(() => { fetchClients(); }, [fetchClients]);
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setNewClient((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const addOrUpdateClient = async () => {
-    setMsg("");
-    setErr("");
-
-    const clientData = {
-      full_name: newClient.full_name,
-      email: newClient.email,
-      phone: newClient.phone,
-      category: newClient.category || "StemwithLyn",
-    };
-
-    const isEditing = !!editClient;
-    const url = isEditing
-      ? `${apiUrl}/api/clients/${editClient.id}`
-      : `${apiUrl}/api/clients`;
-
-    const method = isEditing ? "PATCH" : "POST";
-
-    try {
-      const response = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(clientData),
-      });
-
-      if (!response.ok) {
-        const t = await response.text();
-        throw new Error(t || `Failed to ${isEditing ? "update" : "add"} client`);
-      }
-
-      setMsg(`✅ Client ${isEditing ? "updated" : "added"} successfully!`);
-      await fetchClients();
-      setShowForm(false);
-      setNewClient({ full_name: "", email: "", phone: "", category: "StemwithLyn" });
-      setEditClient(null);
-    } catch (error) {
-      console.error(`❌ Error ${isEditing ? "updating" : "adding"} client:`, error);
-      setErr(error?.message || "Something went wrong.");
-    }
-  };
-
-  const handleEdit = (client) => {
-    setMsg("");
-    setErr("");
-    setNewClient({
-      full_name: client.full_name || "",
-      email: client.email || "",
-      phone: client.phone || "",
-      category: client.category || "StemwithLyn",
+  const filteredClients = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    return clients.filter((client) => {
+      const matchesCategory = categoryFilter === "All" || client.category === categoryFilter;
+      const haystack = `${client.full_name || ""} ${client.email || ""} ${client.phone || ""} ${client.category || ""}`.toLowerCase();
+      return matchesCategory && (!term || haystack.includes(term));
     });
+  }, [categoryFilter, clients, query]);
+
+  const linkedCount = clients.filter((client) => Boolean(client.user_id)).length;
+  const openForm = (client = null) => {
     setEditClient(client);
+    setClientForm(client ? { full_name: client.full_name || "", email: client.email || "", phone: client.phone || "", category: client.category || "StemwithLyn" } : emptyClient);
+    setMessage({ type: "", text: "" });
     setShowForm(true);
   };
 
-  const handleDelete = async (id) => {
-    setMsg("");
-    setErr("");
-    if (!window.confirm("Are you sure you want to delete this client?")) return;
-
+  const saveClient = async (event) => {
+    event.preventDefault();
+    if (!clientForm.full_name.trim()) return setMessage({ type: "error", text: "A full name is required." });
+    setSaving(true); setMessage({ type: "", text: "" });
     try {
-      const response = await fetch(`${apiUrl}/api/clients/${id}`, { method: "DELETE" });
-      if (!response.ok) {
-        const t = await response.text();
-        throw new Error(t || "Failed to delete client");
-      }
-
-      setClients((prev) => prev.filter((c) => c.id !== id));
-      setMsg("✅ Client deleted.");
-    } catch (error) {
-      console.error("Error deleting client:", error);
-      setErr(error?.message || "Failed to delete client");
-    }
-  };
-
-  // ✅ NEW: Create/Login link for portal access
-  const createLoginForClient = async (clientRow) => {
-    setMsg("");
-    setErr("");
-
-    if (!clientRow?.id) return;
-
-    if (!clientRow.email) {
-      setErr("Client must have an email to create a portal login.");
-      return;
-    }
-
-    const ok = window.confirm(
-      `Create a portal login for:\n\n${clientRow.full_name}\n${clientRow.email}\n\nThis will email them a temporary login. Continue?`
-    );
-    if (!ok) return;
-
-    setBusyId(clientRow.id);
-
-    try {
-      const response = await fetch(`${apiUrl}/admin/clients/${clientRow.id}/create-login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-
-      if (!response.ok) {
-        const t = await response.text();
-        throw new Error(t || "Failed to create login.");
-      }
-
-      const data = await response.json(); // { success, user }
-      setMsg(`✅ Portal login created for ${clientRow.full_name}. Username: ${data?.user?.username || "sent by email"}`);
+      const response = await fetch(editClient ? `${apiUrl}/api/clients/${editClient.id}` : `${apiUrl}/api/clients`, { method: editClient ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...clientForm, full_name: clientForm.full_name.trim(), email: clientForm.email.trim(), phone: clientForm.phone.trim() }) });
+      if (!response.ok) throw new Error((await response.text()) || "The client could not be saved.");
       await fetchClients();
-    } catch (error) {
-      console.error("❌ create login error:", error);
-      setErr(error?.message || "Failed to create login.");
-    } finally {
-      setBusyId(null);
-    }
+      setShowForm(false); setEditClient(null); setClientForm(emptyClient);
+      setMessage({ type: "success", text: `Client ${editClient ? "updated" : "added"} successfully.` });
+    } catch (error) { setMessage({ type: "error", text: error.message || "The client could not be saved." }); }
+    finally { setSaving(false); }
   };
 
-  return (
-    <div className="userlist-container">
-      <h1>Clients</h1>
+  const deleteClient = async (client) => {
+    if (!window.confirm(`Delete ${client.full_name}? This cannot be undone.`)) return;
+    setBusyId(client.id);
+    try {
+      const response = await fetch(`${apiUrl}/api/clients/${client.id}`, { method: "DELETE" });
+      if (!response.ok) throw new Error((await response.text()) || "Failed to delete client.");
+      setClients((current) => current.filter((item) => item.id !== client.id));
+      setMessage({ type: "success", text: `${client.full_name} was deleted.` });
+    } catch (error) { setMessage({ type: "error", text: error.message || "Failed to delete client." }); }
+    finally { setBusyId(null); }
+  };
 
-      {msg && (
-        <div style={{ background: "#eaffea", border: "1px solid #9be39b", padding: 10, borderRadius: 8, marginBottom: 10 }}>
-          {msg}
-        </div>
-      )}
-      {err && (
-        <div style={{ background: "#ffe9e9", border: "1px solid #ffb3b3", padding: 10, borderRadius: 8, marginBottom: 10 }}>
-          {err}
-        </div>
-      )}
+  const createLogin = async (client) => {
+    if (!client.email) return setMessage({ type: "error", text: "Add an email address before creating a portal login." });
+    if (!window.confirm(`Create and email a portal login to ${client.full_name} at ${client.email}?`)) return;
+    setBusyId(client.id);
+    try {
+      const response = await fetch(`${apiUrl}/admin/clients/${client.id}/create-login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      if (!response.ok) throw new Error((await response.text()) || "Failed to create login.");
+      const data = await response.json(); await fetchClients();
+      setMessage({ type: "success", text: `Portal login created for ${client.full_name}${data?.user?.username ? ` (${data.user.username})` : ""}.` });
+    } catch (error) { setMessage({ type: "error", text: error.message || "Failed to create login." }); }
+    finally { setBusyId(null); }
+  };
 
-      <button
-        onClick={() => {
-          setMsg("");
-          setErr("");
-          setNewClient({ full_name: "", email: "", phone: "", category: "StemwithLyn" });
-          setShowForm(!showForm);
-          setEditClient(null);
-        }}
-      >
-        {showForm ? "Cancel" : "Add New Client"}
-      </button>
+  return <main className="clients-workspace">
+    <header className="clients-header"><div><span className="clients-kicker">ADMIN WORKSPACE</span><h1>Clients</h1><p>Manage contact details, organizations, and portal access.</p></div><button className="clients-primary" onClick={() => openForm()}><FaPlus /> Add client</button></header>
 
-      {showForm && (
-        <div className="new-client-form">
-          <h2>{editClient ? "Edit Client" : "Add New Client"}</h2>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              addOrUpdateClient();
-            }}
-          >
-            <label>
-              Full Name:
-              <input type="text" name="full_name" value={newClient.full_name} onChange={handleChange} required />
-            </label>
+    <section className="client-stats">
+      <article><span className="stat-icon purple"><FaUsers /></span><div><strong>{clients.length}</strong><span>Total clients</span></div></article>
+      <article><span className="stat-icon green"><FaUserLock /></span><div><strong>{linkedCount}</strong><span>Portal accounts</span></div></article>
+      <article><span className="stat-icon gold"><FaUser /></span><div><strong>{new Set(clients.map((client) => client.category).filter(Boolean)).size}</strong><span>Organizations</span></div></article>
+    </section>
 
-            <label>
-              Email:
-              <input type="email" name="email" value={newClient.email} onChange={handleChange} />
-            </label>
+    {message.text && <div className={`clients-notice ${message.type}`}><span>{message.type === "success" ? <FaCheckCircle /> : <FaTimes />}{message.text}</span><button onClick={() => setMessage({ type: "", text: "" })}><FaTimes /></button></div>}
 
-            <label>
-              Phone:
-              <input type="tel" name="phone" value={newClient.phone} onChange={handleChange} />
-            </label>
+    <section className="clients-panel">
+      <div className="clients-tools"><label className="clients-search"><FaSearch /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, email, phone, or organization…" /></label><select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="All">All organizations</option>{categories.map((category) => <option key={category}>{category}</option>)}</select></div>
+      <div className="clients-results-label"><strong>{filteredClients.length}</strong> {filteredClients.length === 1 ? "client" : "clients"}{query || categoryFilter !== "All" ? " found" : ""}</div>
 
-            <label>Category:</label>
-            <select name="category" value={newClient.category} onChange={handleChange} required>
-              <option value="StemwithLyn">StemwithLyn</option>
-              <option value="United Mentors">United Mentors</option>
-              <option value="BWLA">B.Wright Leadership Academy</option>
-              <option value="Above & Beyond Learning">Above & Beyond Learning</option>
-              <option value="Club Z">Club Z</option>
-            </select>
+      {loading ? <div className="clients-empty"><span className="clients-spinner" /><strong>Loading clients…</strong></div> : filteredClients.length === 0 ? <div className="clients-empty"><FaUsers /><strong>No clients found</strong><span>{clients.length ? "Try changing your search or filter." : "Add your first client to get started."}</span></div> : <div className="clients-table-wrap"><table className="clients-table"><thead><tr><th>Client</th><th>Contact</th><th>Organization</th><th>Portal access</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{filteredClients.map((client) => <tr key={client.id}><td><div className="client-identity"><span className="client-avatar">{initials(client.full_name)}</span><div><strong>{client.full_name || "Unnamed client"}</strong><small>Client #{client.id}</small></div></div></td><td><div className="client-contact">{client.email ? <a href={`mailto:${client.email}`}><FaEnvelope /> {client.email}</a> : <span className="missing">No email</span>}{client.phone ? <a href={`tel:${client.phone}`}><FaPhone /> {client.phone}</a> : <span className="missing">No phone</span>}</div></td><td><span className="category-pill">{client.category || "Unassigned"}</span></td><td>{client.user_id ? <span className="portal-status linked"><FaCheckCircle /> Linked</span> : <button className="portal-action" disabled={busyId === client.id} onClick={() => createLogin(client)}><FaUserLock /> {busyId === client.id ? "Creating…" : "Create login"}</button>}</td><td><div className="client-actions"><button onClick={() => openForm(client)} aria-label={`Edit ${client.full_name}`}><FaEdit /></button><button className="danger" disabled={busyId === client.id} onClick={() => deleteClient(client)} aria-label={`Delete ${client.full_name}`}><FaTrash /></button></div></td></tr>)}</tbody></table></div>}
+    </section>
 
-            <button type="submit">{editClient ? "Update" : "Save"}</button>
-          </form>
-        </div>
-      )}
-
-      {clients.length > 0 ? (
-        <table className="userlist-table">
-          <thead>
-            <tr>
-              <th>Full Name</th>
-              <th>Email</th>
-              <th>Phone</th>
-              <th>Category</th>
-              <th>Portal</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {clients.map((client) => {
-              const linked = !!client.user_id; // backend must return user_id on /api/clients
-
-              return (
-                <tr key={client.id}>
-                  <td>{client.full_name}</td>
-                  <td>{client.email || "—"}</td>
-                  <td>{client.phone || "—"}</td>
-                  <td>{client.category || "—"}</td>
-
-                  <td>
-                    {linked ? (
-                      <span style={{ fontWeight: 700 }}>Linked ✅</span>
-                    ) : (
-                      <button
-                        onClick={() => createLoginForClient(client)}
-                        disabled={busyId === client.id}
-                        style={{
-                          opacity: busyId === client.id ? 0.6 : 1,
-                          cursor: busyId === client.id ? "not-allowed" : "pointer",
-                        }}
-                      >
-                        {busyId === client.id ? "Creating..." : "Create Login"}
-                      </button>
-                    )}
-                  </td>
-
-                  <td>
-                    <button onClick={() => handleEdit(client)}>Edit</button>
-                    <button onClick={() => handleDelete(client.id)}>Delete</button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      ) : (
-        <p>No clients available yet.</p>
-      )}
-    </div>
-  );
+    {showForm && <div className="client-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowForm(false); }}><section className="client-modal" role="dialog" aria-modal="true" aria-labelledby="client-form-title"><div className="client-modal-header"><div><span>{editClient ? "UPDATE RECORD" : "NEW RECORD"}</span><h2 id="client-form-title">{editClient ? "Edit client" : "Add a client"}</h2></div><button onClick={() => setShowForm(false)} aria-label="Close"><FaTimes /></button></div><form onSubmit={saveClient}><div className="client-form-grid"><label className="wide"><span>Full name *</span><input value={clientForm.full_name} onChange={(event) => setClientForm({ ...clientForm, full_name: event.target.value })} placeholder="First and last name" required autoFocus /></label><label><span>Email address</span><input type="email" value={clientForm.email} onChange={(event) => setClientForm({ ...clientForm, email: event.target.value })} placeholder="client@example.com" /></label><label><span>Phone number</span><input type="tel" value={clientForm.phone} onChange={(event) => setClientForm({ ...clientForm, phone: event.target.value })} placeholder="(555) 123-4567" /></label><label className="wide"><span>Organization</span><select value={clientForm.category} onChange={(event) => setClientForm({ ...clientForm, category: event.target.value })}>{categories.map((category) => <option key={category}>{category}</option>)}</select></label></div><div className="client-modal-actions"><button type="button" className="secondary" onClick={() => setShowForm(false)}>Cancel</button><button type="submit" disabled={saving}>{saving ? "Saving…" : editClient ? "Save changes" : "Add client"}</button></div></form></section></div>}
+  </main>;
 };
 
 export default Clients;

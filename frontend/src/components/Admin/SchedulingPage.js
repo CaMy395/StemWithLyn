@@ -1,7 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import Calendar from 'react-calendar';
+import 'react-calendar/dist/Calendar.css';
+import { FaCalendarAlt, FaChevronLeft, FaChevronRight, FaClock, FaEdit, FaPlus, FaTrash, FaTimes } from 'react-icons/fa';
 import '../../App.css';
 import appointmentTypes from '../../data/appointmentTypes.json';
+
+const toDateKey = (value) => {
+    if (!value) return '';
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
 
 const SchedulingPage = () => {
     const [appointments, setAppointments] = useState([]);
@@ -15,6 +26,10 @@ const SchedulingPage = () => {
     const [blockDuration, setBlockDuration] = useState(1);
     const [blockLabel, setBlockLabel] = useState('');
     const [holidays, setHolidays] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [status, setStatus] = useState({ type: '', message: '' });
+    const [filters, setFilters] = useState({ appointments: true, blocks: true });
+    const [isWeekView, setIsWeekView] = useState(() => localStorage.getItem('stemScheduleView') !== 'month');
 
 
     // NEW: plus button options modal (Add Appointment / Block Time)
@@ -35,6 +50,10 @@ const SchedulingPage = () => {
     const [editingAppointment, setEditingAppointment] = useState(null);
 
     const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+
+    useEffect(() => {
+        localStorage.setItem('stemScheduleView', isWeekView ? 'week' : 'month');
+    }, [isWeekView]);
     
     const fetchBlockedTimes = async () => {
         try {
@@ -82,6 +101,7 @@ const SchedulingPage = () => {
   
     useEffect(() => {
         const fetchData = async () => {
+            setIsLoading(true);
             try {
                 const [appointmentsRes, clientsRes] = await Promise.all([
                     axios.get(`${apiUrl}/appointments`),
@@ -102,6 +122,9 @@ const SchedulingPage = () => {
     
             } catch (error) {
                 console.error("❌ Error fetching data:", error);
+                setStatus({ type: 'error', message: 'The schedule could not be loaded. Please try again.' });
+            } finally {
+                setIsLoading(false);
             }
         };
     
@@ -139,14 +162,11 @@ const formatTime = (time) => {
   }).format(d);
 };
 
-
-    const handleDateClick = (date) => setSelectedDate(date);
-
     const handleAddOrUpdateAppointment = async (e) => {
         e.preventDefault();
     
         const clientId = parseInt(newAppointment.client, 10);
-        const selectedClient = clients.find(c => c.id === clientId) || {};
+        const selectedClient = clients.find(c => c.id === clientId);
     
         if (!selectedClient) {
             alert("❌ Error: Selected client not found!");
@@ -271,17 +291,6 @@ const safeEndTime = endTime ? String(endTime) : "";
         let [startHour, startMinutes] = blockStartTime.split(":").map(Number);
         const startTime = `${startHour.toString().padStart(2, "0")}:${startMinutes.toString().padStart(2, "0")}`;
         
-        // Calculate end time based on duration
-        let endHour = startHour;
-        let endMinutes = startMinutes + Math.round(blockDuration * 60); 
-    
-        while (endMinutes >= 60) {
-            endMinutes -= 60;
-            endHour++;
-        }
-    
-        const endTime = `${endHour.toString().padStart(2, "0")}:${endMinutes.toString().padStart(2, "0")}`;
-    
         const blockedTimeEntry = {
             timeSlot: `${blockDate}-${startTime}`, // Store only the start time
             label: `${blockLabel} (${blockDuration} hours)`, // Store duration in label
@@ -497,7 +506,7 @@ const safeEndTime = endTime ? String(endTime) : "";
                                         >
                                             {/* Render blocked slots exactly like appointments */}
                                             {blockedEntriesAtTime.map((blocked, index) => {
-                                                const [startHour, startMinutes] = blocked.timeSlot.split('-').pop().split(':').map(Number);
+                                                const [, startMinutes] = blocked.timeSlot.split('-').pop().split(':').map(Number);
                                                 const blockTop = (startMinutes / 60) * 100; // Align inside the hour
                                                 const blockHeight = blocked.duration * 100; // Each hour = 100% of the row height
                                         
@@ -595,70 +604,47 @@ const safeEndTime = endTime ? String(endTime) : "";
         );
     };
 
+    const selectedKey = toDateKey(selectedDate);
+    const dayAppointments = filters.appointments ? appointments.filter((item) => toDateKey(item.date) === selectedKey) : [];
+    const dayBlocks = filters.blocks ? blockedTimes.filter((item) => toDateKey(item.date) === selectedKey) : [];
+
     return (
-        <div className="scheduling-page">
-            <h2>Scheduling Page</h2>
-            
-            {weekView()}
+        <div className="stem-scheduler-page">
+            <header className="stem-scheduler-header">
+                <div><span className="stem-scheduler-kicker">ADMIN WORKSPACE</span><h1>Schedule</h1><p>Manage tutoring appointments and availability in one place.</p></div>
+                <button className="stem-scheduler-primary" onClick={() => setShowPlusOptionsModal(true)}><FaPlus /> Add to schedule</button>
+            </header>
 
-            <h3>Selected Date: {selectedDate.toDateString()}</h3>
-                <div className="week-view">
-                    {appointments
-                        .filter((appointment) => {
-                            const formatDate = (d) => new Date(d).toISOString().split('T')[0];
-                            return formatDate(appointment.date) === selectedDate.toISOString().split('T')[0];
-                        })
-                        .map((appointment) => (
-                            <div key={appointment.id} className="appointment-card">
-                                <strong>Title:</strong> {appointment.title} <br />
-                                <strong>Client:</strong>{" "}
-                                {clients?.length > 0 && appointment.client_id
-                                ? (clients.find(client => Number(client.id) === Number(appointment.client_id))?.full_name || 'N/A')
-                                : 'N/A'}<br />
-                                <strong>Time:</strong> {formatTime(appointment.time)} - {formatTime(appointment.end_time)} <br />
-                                <strong>Description:</strong> {appointment.description} <br />
-                                <br></br>
-                                <button onClick={() => handleEditAppointment(appointment)}>Edit</button>
-                                <button onClick={() => handleDeleteAppointment(appointment.id)}>Delete</button>
-                            </div>
-                        ))}
+            <div className="stem-scheduler-toolbar">
+                <div className="stem-date-nav">
+                    <button onClick={goToPreviousWeek} aria-label="Previous week"><FaChevronLeft /></button>
+                    <button onClick={() => setSelectedDate(new Date())}>Today</button>
+                    <button onClick={goToNextWeek} aria-label="Next week"><FaChevronRight /></button>
+                    <strong>{selectedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</strong>
                 </div>
-                {/* Display Blocked Times for Selected Date */}
-                <div className="blocked-time-container">
-                    {blockedTimes
-                        .filter(blocked => {
-                            const blockedDate = new Date(blocked.date).toISOString().split('T')[0]; // Ensure comparison is valid
-                            const selectedDateFormatted = selectedDate.toISOString().split('T')[0];
-                            return blockedDate === selectedDateFormatted;
-                        })
-                        .map((blocked) => (
-                            <div key={blocked.timeSlot} className="appointment-card">
-                                <strong>Blocked Time:</strong> {formatTime(blocked.timeSlot.split('-').pop())} <br />
-                                <strong>Reason:</strong> {blocked.label} <br />
-                                <button onClick={() => handleDeleteBlockedTime(blocked)}>Delete</button>
-                            </div>
-                        ))}
-                </div>
+                <div className="stem-view-switch"><button className={isWeekView ? 'active' : ''} onClick={() => setIsWeekView(true)}><FaClock /> Week</button><button className={!isWeekView ? 'active' : ''} onClick={() => setIsWeekView(false)}><FaCalendarAlt /> Month</button></div>
+            </div>
 
-                {/* Floating + button now opens options modal (like Ready Portal) */}
-                <button 
-                    style={{
-                        position: 'fixed',
-                        bottom: '20px',
-                        right: '20px',
-                        backgroundColor: '#8B0000', 
-                        color: 'white',
-                        borderRadius: '50%',
-                        width: '50px',
-                        height: '50px',
-                        fontSize: '24px',
-                        cursor: 'pointer',
-                        border: 'none'
-                    }}
-                    onClick={() => setShowPlusOptionsModal(true)}
-                >
-                    +
-                </button>
+            <div className="stem-scheduler-filters">
+                <label className="appointments"><input type="checkbox" checked={filters.appointments} onChange={(e) => setFilters({ ...filters, appointments: e.target.checked })} /> Appointments <span>{appointments.length}</span></label>
+                <label className="blocks"><input type="checkbox" checked={filters.blocks} onChange={(e) => setFilters({ ...filters, blocks: e.target.checked })} /> Blocked time <span>{blockedTimes.length}</span></label>
+            </div>
+
+            {status.message && <div className={`stem-scheduler-status ${status.type}`}><span>{status.message}</span><button onClick={() => setStatus({ type: '', message: '' })}><FaTimes /></button></div>}
+            {isLoading && <div className="stem-scheduler-loading"><span /> Loading schedule…</div>}
+
+            <div className="stem-calendar-workspace">
+                {isWeekView ? weekView() : <Calendar value={selectedDate} onChange={setSelectedDate} tileContent={getTileContent} calendarType="gregory" />}
+            </div>
+
+            <section className="stem-day-agenda">
+                <div className="stem-agenda-heading"><div><span>SELECTED DAY</span><h2>{selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</h2></div><button onClick={() => { setEditingAppointment(null); setNewAppointment({ title: '', client: '', date: selectedKey, time: '', endTime: '', description: '', recurrence: '', occurrences: 1, weekdays: [] }); setShowAppointmentModal(true); }}><FaPlus /> Appointment</button></div>
+                {dayAppointments.length === 0 && dayBlocks.length === 0 && <div className="stem-empty-agenda"><FaCalendarAlt /><strong>Nothing scheduled</strong><span>This day is open. Add an appointment or block off time.</span></div>}
+                <div className="stem-agenda-grid">
+                    {dayAppointments.map((appointment) => <article className="stem-agenda-card appointment" key={appointment.id}><div className="stem-agenda-time">{formatTime(appointment.time)}<small>{formatTime(appointment.end_time)}</small></div><div className="stem-agenda-copy"><span>APPOINTMENT</span><strong>{appointment.title}</strong><p>{clients.find((client) => Number(client.id) === Number(appointment.client_id))?.full_name || appointment.client_name || 'Client'}</p>{appointment.description && <small>{appointment.description}</small>}</div><div className="stem-card-actions"><button onClick={() => handleEditAppointment(appointment)} aria-label="Edit"><FaEdit /></button><button className="danger" onClick={() => handleDeleteAppointment(appointment.id)} aria-label="Delete"><FaTrash /></button></div></article>)}
+                    {dayBlocks.map((blocked) => <article className="stem-agenda-card block" key={`${blocked.date}-${blocked.timeSlot}`}><div className="stem-agenda-time">{formatTime(blocked.timeSlot.split('-').pop())}</div><div className="stem-agenda-copy"><span>BLOCKED</span><strong>{blocked.label || 'Unavailable'}</strong></div><div className="stem-card-actions"><button className="danger" onClick={() => handleDeleteBlockedTime(blocked)} aria-label="Delete"><FaTrash /></button></div></article>)}
+                </div>
+            </section>
 
                 {/* Plus options modal: Add Appointment / Block Time */}
                 {showPlusOptionsModal && (

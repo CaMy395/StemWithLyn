@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { FaCalendarAlt, FaClock, FaPlus, FaUser } from "react-icons/fa";
 import "../../ClientPortalPage.css";
 
 const ClientPortalPage = () => {
@@ -56,6 +58,8 @@ const ClientPortalPage = () => {
         return da - db;
       });
   }, [appointments, now]);
+
+  const nextAppointment = upcoming[0] || null;
 
   const past = useMemo(() => {
     return appointments
@@ -379,16 +383,18 @@ const ClientPortalPage = () => {
             <span className="portal-pill">STEM with Lyn Portal</span>
             <h1>Welcome back{client?.full_name ? `, ${client.full_name}` : ""}</h1>
             <p>
-              View your tutoring profile, upcoming sessions, appointment history,
-              and reschedule options.
+              Keep track of tutoring sessions and manage your learning schedule.
             </p>
+            <Link className="portal-book-cta" to="/client-portal/schedule"><FaPlus /> Book an appointment</Link>
           </div>
 
-          <div className="portal-hero-stat">
-            <span>{upcoming.length}</span>
-            <p>Upcoming</p>
+          <div className="portal-next-session">
+            <span>NEXT SESSION</span>
+            {nextAppointment ? <><strong>{fmtDate(nextAppointment.date)}</strong><p><FaClock /> {fmtTime(nextAppointment.time)}</p><small>{nextAppointment.title}</small></> : <><strong>No session booked</strong><p>Your calendar is clear.</p></>}
           </div>
         </section>
+
+        <section className="portal-stats"><article><FaCalendarAlt /><div><strong>{upcoming.length}</strong><span>Upcoming</span></div></article><article><FaClock /><div><strong>{past.length}</strong><span>Completed</span></div></article><article><FaUser /><div><strong>{client?.category || "STEM"}</strong><span>Program</span></div></article></section>
 
         {err && <div className="portal-error">{err}</div>}
 

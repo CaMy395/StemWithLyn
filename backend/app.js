@@ -311,19 +311,20 @@ app.get('/api/health', (req, res) => {
 });
 
 
-// Set the timezone for the pool connection
-pool.on('connect', async (client) => {
-    await client.query("SET timezone = 'America/New_York'");
-    console.log('Timezone set to America/New_York for the connection');
-});
-
 // Test database connection
 (async () => {
     try {
-        await pool.connect();
+        // pool.query releases its client automatically. Using pool.connect()
+        // here leaked a checked-out startup client that could later crash the
+        // process when its TCP/TLS connection was reset.
+        const result = await pool.query('SELECT NOW() AS server_time');
         console.log('Connected to PostgreSQL');
+        console.log(`Database time: ${result.rows[0]?.server_time || 'available'}`);
     } catch (err) {
-        console.error('Connection error', err.stack);
+        console.error('PostgreSQL startup connection failed:', {
+          code: err?.code,
+          message: err?.message,
+        });
     }
 })();
 
@@ -2957,4 +2958,37 @@ export default app;
 // Start the server
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
+});
+
+app.patch('/api/profits/:id', async (req, res) => {
+  const { id } = req.params;
+  const { category, description, amount, type } = req.body || {};
+  const numericAmount = Number(amount);
+
+  if (!category || !description || !Number.isFinite(numericAmount) || !type) {
+    return res.status(400).json({ error: 'Category, description, valid amount, and type are required.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE profits SET category=$1, description=$2, amount=$3, type=$4 WHERE id=$5 RETURNING id, category, description, amount, type, created_at`,
+      [category.trim(), description.trim(), numericAmount, type.trim(), id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Transaction not found.' });
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating profit transaction:', error);
+    res.status(500).json({ error: 'Failed to update transaction.' });
+  }
+});
+
+app.delete('/api/profits/:id', async (req, res) => {
+  try {
+    const result = await pool.query('DELETE FROM profits WHERE id=$1 RETURNING id', [req.params.id]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Transaction not found.' });
+    res.json({ success: true, id: result.rows[0].id });
+  } catch (error) {
+    console.error('Error deleting profit transaction:', error);
+    res.status(500).json({ error: 'Failed to delete transaction.' });
+  }
 });

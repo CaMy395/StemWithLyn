@@ -2,6 +2,8 @@ import { useState } from "react";
 import axios from "axios";
 
 const MentorSessionLog = () => {
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState({ type: "", text: "" });
   const [formData, setFormData] = useState({
     email: "",
     mentorName: "",
@@ -39,13 +41,14 @@ const MentorSessionLog = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
+    setSubmitting(true);
+    setMessage({ type: "", text: "" });
     try {
-        const response = await axios.post(`${apiUrl}/mentors-log`, formData, {
+        await axios.post(`${apiUrl}/mentors-log`, formData, {
             headers: { "Content-Type": "application/json" }
         });
 
-        alert("Session log submitted and email sent!");
+        setMessage({ type: "success", text: "Session log submitted and emailed successfully." });
 
         // ✅ Reset the form after successful submission
         setFormData({
@@ -68,15 +71,17 @@ const MentorSessionLog = () => {
         });
     } catch (error) {
         console.error("Error submitting session log:", error.response?.data || error.message);
-        alert(`Error: ${error.response?.data?.error || "An error occurred while submitting the session log."}`);
+        setMessage({ type: "error", text: error.response?.data?.error || "The session log could not be submitted." });
+    } finally {
+        setSubmitting(false);
     }
 };
 
   
 
   return (
-    <form onSubmit={handleSubmit}>
-      <h2>United Mentors Session Log</h2>
+    <main className="mentor-workspace"><header className="mentor-header"><div><span>UNITED MENTORS</span><h1>Session log</h1><p>Document student progress, communication, and session outcomes.</p></div></header>{message.text && <div className={`mentor-notice ${message.type}`}>{message.text}</div>}<form className="mentor-form" onSubmit={handleSubmit}>
+      <h2>Session information</h2>
       <label>Email: <input type="email" name="email" onChange={handleChange} required /></label>
       <label>Mentor Name: <input type="text" name="mentorName" onChange={handleChange} required /></label>
       <label>Student Name: <input type="text" name="studentName" onChange={handleChange} required /></label>
@@ -153,8 +158,8 @@ const MentorSessionLog = () => {
         <textarea name="additionalNotes" onChange={handleChange}></textarea>
       </label>
 
-      <button type="submit">Submit</button>
-    </form>
+      <button className="mentor-submit" type="submit" disabled={submitting}>{submitting ? "Submitting…" : "Submit session log"}</button>
+    </form></main>
   );
 };
 

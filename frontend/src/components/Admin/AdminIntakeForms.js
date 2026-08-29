@@ -152,15 +152,15 @@ const AdminIntakeForms = () => {
     };
     
     return (
-        <div className="admin-intake-forms-container">
-            <h1>Submitted Intake Forms</h1>
+        <main className="admin-intake-forms-container forms-workspace">
+            <header className="forms-header"><div><span>ADMIN WORKSPACE</span><h1>Intake forms</h1><p>Review incoming requests and client details.</p></div></header>
             {error && <p className="error-message">{error}</p>}
-    <div>
-        <p>Intake Forms: {intakeCount}</p>
-        <p>Craft Cocktails Forms: {craftCocktailsCount}</p>
-        <p>Bartending Course Forms: {bartendingCourseCount}</p>
-        <p>Bartending Classes Forms: {bartendingClassesCount}</p>
-        <p>Tutoring Forms: {tutoringAptCount}</p>
+    <div className="forms-stats">
+        <p><strong>{intakeCount}</strong><span>General</span></p>
+        <p><strong>{craftCocktailsCount}</strong><span>Craft cocktails</span></p>
+        <p><strong>{bartendingCourseCount}</strong><span>Courses</span></p>
+        <p><strong>{bartendingClassesCount}</strong><span>Classes</span></p>
+        <p><strong>{tutoringAptCount}</strong><span>Tutoring</span></p>
     </div>
     <br></br>
             {/* Intake Forms */}
@@ -469,7 +469,7 @@ const AdminIntakeForms = () => {
                 )}
                 <br />
 
-        </div>
+        </main>
     );
 };
 

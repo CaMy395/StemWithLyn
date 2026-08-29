@@ -1,97 +1,13 @@
 import React from "react";
 import { Link } from "react-router-dom";
+import { FaArrowRight, FaCheck, FaCode, FaGraduationCap, FaHandsHelping, FaLaptopCode, FaLightbulb, FaRegCalendarCheck, FaUserGraduate } from "react-icons/fa";
 import "../../WelcomePage.css";
 
-const WelcomePage = () => {
-    return (
-        <div className="welcome-page">
-            <div className="welcome-overlay">
-
-                {/* HERO */}
-                <div className="welcome-hero">
-                    <h1>Welcome to STEM with Lyn</h1>
-
-                    <p>
-                        Empowering students through tutoring, technology,
-                        engineering, and scholarship opportunities.
-                    </p>
-                </div>
-
-                {/* MAIN BUTTONS */}
-                <div className="welcome-buttons">
-
-                    {/* Tutoring */}
-                    <Link
-                        to="/tutoring-intake"
-                        style={{ textDecoration: "none" }}
-                    >
-                        <div className="bubble-button">
-                            <span>🧠</span>
-                            <p>Tutoring</p>
-                        </div>
-                    </Link>
-
-                    {/* Tech */}
-                    <Link
-                        to="/tech-engineering"
-                        style={{ textDecoration: "none" }}
-                    >
-                        <div className="bubble-button">
-                            <span>⚙️</span>
-                            <p>Tech & Engineering</p>
-                        </div>
-                    </Link>
-
-                    {/* Scholarships */}
-                    <Link
-                        to="/scholarships"
-                        style={{ textDecoration: "none" }}
-                    >
-                        <div className="bubble-button featured-bubble">
-                            <span>🎓</span>
-                            <p>Scholarships & Funding</p>
-                        </div>
-                    </Link>
-
-                </div>
-
-                {/* INFO CARDS */}
-                <div className="welcome-info-grid">
-
-                    <div className="welcome-card">
-                        <h3>📚 Academic Support</h3>
-
-                        <p>
-                            Personalized STEM tutoring designed to help
-                            students build confidence, improve grades,
-                            and close learning gaps.
-                        </p>
-                    </div>
-
-                    <div className="welcome-card">
-                        <h3>💻 Tech Opportunities</h3>
-
-                        <p>
-                            Explore coding, robotics, engineering,
-                            technology, and future STEM career pathways.
-                        </p>
-                    </div>
-
-                    <div className="welcome-card">
-                        <h3>🎓 Scholarship Help</h3>
-
-                        <p>
-                            Learn about Step Up For Students and
-                            Epic Foundation scholarship opportunities
-                            available for eligible students.
-                        </p>
-                    </div>
-
-                </div>
-
-            </div>
-        </div>
-    );
-};
-
+const services=[{icon:FaUserGraduate,kicker:"PERSONALIZED LEARNING",title:"Tutoring that builds confidence",text:"One-on-one academic support shaped around each student’s goals, pace, and learning needs.",to:"/tutoring-intake",link:"Explore tutoring"},{icon:FaLaptopCode,kicker:"BUILD THE FUTURE",title:"Technology & engineering",text:"Practical guidance in coding, engineering, problem-solving, and technology career pathways.",to:"/tech-engineering",link:"Explore tech services"},{icon:FaGraduationCap,kicker:"FUND THE JOURNEY",title:"Scholarship resources",text:"Clear information about education funding opportunities that may help eligible families access support.",to:"/scholarships",link:"View scholarships"}];
+const WelcomePage=()=> <main className="home-page">
+  <section className="home-hero"><div className="home-hero-inner"><div className="home-hero-copy"><span className="home-eyebrow"><FaLightbulb/> Learning with purpose</span><h1>Helping students turn <em>curiosity</em> into confidence.</h1><p>Personalized tutoring, technology guidance, and scholarship resources designed to help students move forward in STEM.</p><div className="home-hero-actions"><Link className="home-primary" to="/client-scheduling"><FaRegCalendarCheck/> Book a session</Link><Link className="home-secondary" to="/tutoring-intake">Tell us what you need <FaArrowRight/></Link></div><div className="home-trust"><span><FaCheck/> Individual support</span><span><FaCheck/> Flexible session options</span><span><FaCheck/> Student-centered guidance</span></div></div><div className="home-hero-panel"><span className="panel-label">YOUR NEXT STEP</span><h2>Learning should feel possible.</h2><p>Start with a conversation about your student’s goals. We’ll help you choose the right path.</p><div className="panel-steps"><div><span>01</span><p><strong>Share your goals</strong><small>Tell us where support is needed.</small></p></div><div><span>02</span><p><strong>Choose a service</strong><small>Find the right learning experience.</small></p></div><div><span>03</span><p><strong>Schedule a time</strong><small>Book around your availability.</small></p></div></div></div></div></section>
+  <section className="home-services"><div className="home-section-heading"><span>HOW WE CAN HELP</span><h2>Support for every stage of the journey</h2><p>Choose the path that fits your goals today. We’ll help you grow from there.</p></div><div className="home-service-grid">{services.map(({icon:Icon,kicker,title,text,to,link})=><article key={title} className="home-service-card"><span className="service-icon"><Icon/></span><small>{kicker}</small><h3>{title}</h3><p>{text}</p><Link to={to}>{link}<FaArrowRight/></Link></article>)}</div></section>
+  <section className="home-difference"><div className="difference-art"><span className="orbit one"><FaCode/></span><span className="orbit two"><FaGraduationCap/></span><span className="orbit three"><FaHandsHelping/></span><div><strong>STEM</strong><span>with Lyn</span></div></div><div className="difference-copy"><span>THE STEM WITH LYN DIFFERENCE</span><h2>More than answers. We build capable learners.</h2><p>Strong academic support meets students where they are while helping them develop the habits, confidence, and problem-solving skills to keep progressing.</p><div className="difference-list"><div><FaCheck/><p><strong>Personalized approach</strong><span>Sessions shaped around the student—not a one-size-fits-all worksheet.</span></p></div><div><FaCheck/><p><strong>Practical STEM connection</strong><span>Learning connected to technology, engineering, and future possibilities.</span></p></div><div><FaCheck/><p><strong>Clear next steps</strong><span>Families understand what to do next and how to keep momentum.</span></p></div></div></div></section>
+  <section className="home-cta"><span>READY TO GET STARTED?</span><h2>Let’s build the next breakthrough together.</h2><p>Choose a time that works for you and take the first step toward more confident learning.</p><div><Link className="home-primary" to="/client-scheduling">Schedule now <FaArrowRight/></Link><Link className="home-cta-link" to="/login">Already a client? Open your portal</Link></div></section>
+</main>;
 export default WelcomePage;
