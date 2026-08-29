@@ -1,363 +1,123 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import axios from "axios";
 import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
 import "../../ClientSchedulingPage.css";
 import appointmentTypes from "../../data/appointmentTypes.json";
 
+const toDateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+const normalizeTime = (time) => { const value = String(time || "").trim(); return value && value.length === 5 ? `${value}:00` : value; };
+const timeKey = (time) => normalizeTime(time).slice(0, 5);
+const formatTime = (time) => { const [hours, minutes] = timeKey(time).split(":"); const date = new Date(); date.setHours(Number(hours || 0), Number(minutes || 0), 0, 0); return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }); };
+const formatDate = (date) => date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+const getServiceMeta = (service) => ({ duration: service.title.match(/\((30 min|1 hour)/i)?.[1] || "Session", price: Number(service.price) > 0 ? `$${Number(service.price).toFixed(0)}` : "Included" });
+
 const ClientSchedulingPage = ({ portalMode = false }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-
   const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:3001";
+  const isPortal = portalMode || location.pathname.startsWith("/client-portal");
+  const loggedInUser = useMemo(() => { try { return JSON.parse(localStorage.getItem("loggedInUser") || "null"); } catch { return null; } }, []);
+  const clientAuthHeaders = useMemo(() => { const id = loggedInUser?.id || localStorage.getItem("userId"); const username = loggedInUser?.username || localStorage.getItem("username"); return { ...(id ? { "x-user-id": String(id) } : {}), ...(username ? { "x-username": String(username) } : {}) }; }, [loggedInUser]);
+  const today = useMemo(() => { const date = new Date(); date.setHours(0, 0, 0, 0); return date; }, []);
 
-  // ✅ Detect portal mode even if prop was forgotten
-  const isPortalRoute = location.pathname.startsWith("/client-portal");
-  const isPortal = portalMode || isPortalRoute;
-
-  // -----------------------
-  // Logged-in user snapshot
-  // -----------------------
-  const loggedInUser = useMemo(() => {
-    try {
-      return JSON.parse(localStorage.getItem("loggedInUser") || "null");
-    } catch {
-      return null;
-    }
-  }, []);
-
-  const usernameLS = localStorage.getItem("username") || "";
-  const userIdLS = localStorage.getItem("userId") || "";
-
-  // ✅ Headers required by your backend requireClientUser()
-  const clientAuthHeaders = useMemo(() => {
-    const id = loggedInUser?.id || userIdLS;
-    const uname = loggedInUser?.username || usernameLS;
-
-    const headers = {};
-    if (id) headers["x-user-id"] = String(id);
-    if (uname) headers["x-username"] = String(uname);
-
-    return headers;
-  }, [loggedInUser, userIdLS, usernameLS]);
-
-  // -----------------------
-  // State
-  // -----------------------
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(today);
   const [selectedAppointmentType, setSelectedAppointmentType] = useState("");
+  const [selectedSlot, setSelectedSlot] = useState(null);
   const [availableSlots, setAvailableSlots] = useState([]);
-
   const [clientId, setClientId] = useState(null);
   const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [clientPhone, setClientPhone] = useState("");
-
-  const [profileLoading, setProfileLoading] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [profileLoading, setProfileLoading] = useState(isPortal);
   const [profileErr, setProfileErr] = useState("");
-
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [slotsErr, setSlotsErr] = useState("");
+  const [formErr, setFormErr] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const selectedService = useMemo(() => appointmentTypes.find((item) => item.title === selectedAppointmentType), [selectedAppointmentType]);
+  const serviceMeta = selectedService ? getServiceMeta(selectedService) : null;
+  const categories = useMemo(() => [...new Set(appointmentTypes.map((item) => item.category))], []);
 
-  // =========================================
-  // ✅ PORTAL MODE: auto-fill from /client/me
-  // =========================================
   useEffect(() => {
     if (!isPortal) return;
-
-    const loadPortalProfile = async () => {
-      setProfileLoading(true);
-      setProfileErr("");
-
+    const loadProfile = async () => {
+      setProfileLoading(true); setProfileErr("");
       try {
-        // If we don’t have either header, you’re not “authenticated” for /client/me
-        if (!clientAuthHeaders["x-user-id"] && !clientAuthHeaders["x-username"]) {
-          throw new Error("Portal auth headers missing. Please log in again.");
-        }
-
-        const res = await axios.get(`${apiUrl}/client/me`, {
-          headers: clientAuthHeaders,
-        });
-
-        const client = res?.data?.client || null;
-        const user = res?.data?.user || null;
-
-        if (!client && !user) {
-          throw new Error("No portal profile data returned from /client/me.");
-        }
-
-        const name =
-          client?.full_name ||
-          user?.name ||
-          user?.username ||
-          loggedInUser?.username ||
-          "";
-
-        const email =
-          client?.email ||
-          user?.email ||
-          loggedInUser?.email ||
-          "";
-
-        const phone =
-          client?.phone ||
-          user?.phone ||
-          loggedInUser?.phone ||
-          "";
-
+        if (!clientAuthHeaders["x-user-id"] && !clientAuthHeaders["x-username"]) throw new Error("Your session has expired. Please log in again.");
+        const { data } = await axios.get(`${apiUrl}/client/me`, { headers: clientAuthHeaders });
+        const client = data?.client; const user = data?.user;
+        if (!client && !user) throw new Error("We could not load your profile.");
         setClientId(client?.id || null);
-        setClientName(name || "");
-        setClientEmail(email || "");
-        setClientPhone(phone || "");
-      } catch (err) {
-        console.error("❌ /client/me failed:", err);
-        setProfileErr(
-          err?.response?.data?.error ||
-            err?.message ||
-            "Failed to load portal profile."
-        );
-      } finally {
-        setProfileLoading(false);
-      }
+        setClientName(client?.full_name || user?.name || user?.username || loggedInUser?.username || "");
+        setClientEmail(client?.email || user?.email || loggedInUser?.email || "");
+        setClientPhone(client?.phone || user?.phone || loggedInUser?.phone || "");
+      } catch (error) { setProfileErr(error?.response?.data?.error || error.message || "We could not load your profile."); }
+      finally { setProfileLoading(false); }
     };
+    loadProfile();
+  }, [apiUrl, clientAuthHeaders, isPortal, loggedInUser]);
 
-    loadPortalProfile();
-  }, [isPortal, apiUrl, clientAuthHeaders, loggedInUser]);
-
-  // =========================================
-  // ✅ PUBLIC MODE: allow URL prefills
-  // =========================================
   useEffect(() => {
     if (isPortal) return;
+    setClientName(searchParams.get("name") || ""); setClientEmail(searchParams.get("email") || ""); setClientPhone(searchParams.get("phone") || "");
+    const requestedType = searchParams.get("appointmentType") || "";
+    if (appointmentTypes.some((item) => item.title === requestedType)) setSelectedAppointmentType(requestedType);
+  }, [isPortal, searchParams]);
 
-    const name = searchParams.get("name");
-    const email = searchParams.get("email");
-    const phone = searchParams.get("phone");
-    const apptType = searchParams.get("appointmentType");
-
-    if (name) setClientName(name);
-    if (email) setClientEmail(email);
-    if (phone) setClientPhone(phone);
-    if (apptType) setSelectedAppointmentType(apptType);
-  }, [searchParams, isPortal]);
-
-  // =========================================
-  // Availability
-  // =========================================
   const fetchAvailability = useCallback(async () => {
-    if (!selectedDate || !selectedAppointmentType) return;
-
-    const formattedDate = selectedDate.toISOString().split("T")[0];
-    const appointmentWeekday = selectedDate
-      .toLocaleDateString("en-US", { weekday: "long" })
-      .trim();
-
+    if (!selectedAppointmentType || !selectedDate) { setAvailableSlots([]); return; }
+    setSlotsLoading(true); setSlotsErr(""); setSelectedSlot(null);
+    const date = toDateKey(selectedDate); const weekday = selectedDate.toLocaleDateString("en-US", { weekday: "long" });
     try {
-      const response = await axios.get(`${apiUrl}/availability`, {
-        params: { weekday: appointmentWeekday, appointmentType: selectedAppointmentType },
-      });
+      const [availabilityRes, blockedRes, bookedRes] = await Promise.all([
+        axios.get(`${apiUrl}/availability`, { params: { weekday, appointmentType: selectedAppointmentType } }),
+        axios.get(`${apiUrl}/blocked-times`, { params: { date } }),
+        axios.get(`${apiUrl}/appointments/by-date`, { params: { date } }),
+      ]);
+      const unavailable = new Set([...(blockedRes.data?.blockedTimes || []).map(timeKey), ...(Array.isArray(bookedRes.data) ? bookedRes.data : []).map((appt) => timeKey(appt.time))]);
+      setAvailableSlots((Array.isArray(availabilityRes.data) ? availabilityRes.data : []).map((slot) => ({ ...slot, start_time: normalizeTime(slot.start_time), end_time: normalizeTime(slot.end_time) })).filter((slot) => !unavailable.has(timeKey(slot.start_time))));
+    } catch (error) { console.error("Error fetching availability:", error); setAvailableSlots([]); setSlotsErr("We couldn't load available times. Please try again."); }
+    finally { setSlotsLoading(false); }
+  }, [apiUrl, selectedAppointmentType, selectedDate]);
+  useEffect(() => { fetchAvailability(); }, [fetchAvailability]);
 
-      const blockedTimesRes = await axios.get(`${apiUrl}/blocked-times`, {
-        params: { date: formattedDate },
-      });
-
-      const bookedTimesRes = await axios.get(`${apiUrl}/appointments/by-date`, {
-        params: { date: formattedDate },
-      });
-
-      const blockedTimes = (blockedTimesRes.data.blockedTimes || []).map(
-        (time) => `${formattedDate}-${String(time).split(":")[0]}`
-      );
-
-      const bookedTimes = (bookedTimesRes.data || []).map(
-        (appt) => `${formattedDate}-${String(appt.time || "").split(":")[0]}`
-      );
-
-      const unavailableTimes = [...new Set([...blockedTimes, ...bookedTimes])];
-
-      const formattedAvailableSlots = (response.data || []).map((slot) => ({
-        ...slot,
-        start_time: slot.start_time?.length === 5 ? `${slot.start_time}:00` : slot.start_time,
-        end_time: slot.end_time?.length === 5 ? `${slot.end_time}:00` : slot.end_time,
-      }));
-
-      const filteredSlots = formattedAvailableSlots.filter((slot) => {
-        const slotHour = String(slot.start_time || "").split(":")[0];
-        return !unavailableTimes.some((x) => x.includes(`${formattedDate}-${slotHour}`));
-      });
-
-      setAvailableSlots(filteredSlots.length > 0 ? filteredSlots : []);
-    } catch (error) {
-      console.error("❌ Error fetching availability:", error);
-      setAvailableSlots([]);
-    }
-  }, [apiUrl, selectedDate, selectedAppointmentType]);
-
-  useEffect(() => {
-    if (selectedDate && selectedAppointmentType) {
-      setAvailableSlots([]);
-      fetchAvailability();
-    }
-  }, [selectedDate, selectedAppointmentType, fetchAvailability]);
-
-  const formatTime = (time) => {
-    const [hours, minutes] = String(time || "").split(":");
-    const date = new Date();
-    date.setHours(Number(hours || 0), Number(minutes || 0));
-    return new Intl.DateTimeFormat("en-US", {
-      hour: "numeric",
-      minute: "numeric",
-      hour12: true,
-    }).format(date);
+  const handleSubmit = async (event) => {
+    event.preventDefault(); if (isSubmitting) return;
+    if (!selectedService) return setFormErr("Choose a service to continue.");
+    if (!selectedSlot) return setFormErr("Choose an available time to continue.");
+    if (!clientName.trim() || !clientEmail.trim() || !clientPhone.trim()) return setFormErr("Please complete your name, email, and phone number.");
+    if (!/^\S+@\S+\.\S+$/.test(clientEmail)) return setFormErr("Enter a valid email address.");
+    const appointmentData = { title: selectedAppointmentType, client_id: isPortal ? clientId : undefined, client_name: clientName.trim(), client_email: clientEmail.trim(), client_phone: clientPhone.trim(), date: toDateKey(selectedDate), time: normalizeTime(selectedSlot.start_time), end_time: normalizeTime(selectedSlot.end_time), description: notes.trim() || `Client booked a ${selectedAppointmentType} appointment${isPortal ? " (portal)" : ""}`, price: Number(selectedService.price || 0) };
+    try {
+      setIsSubmitting(true); setFormErr(""); localStorage.setItem("pendingAppointment", JSON.stringify(appointmentData));
+      if (appointmentData.price <= 0) { navigate("/payment-success"); return; }
+      const { data } = await axios.post(`${apiUrl}/api/create-payment-link`, { email: appointmentData.client_email, amount: appointmentData.price, itemName: selectedAppointmentType, appointmentData });
+      if (!data?.url) throw new Error("No checkout link was returned."); window.location.assign(data.url);
+    } catch (error) { console.error("Booking failed:", error); setFormErr(error?.response?.data?.error || error.message || "Booking failed. Please try again."); setIsSubmitting(false); }
   };
 
-  // =========================================
-  // Book appointment
-  // =========================================
-  const bookAppointment = async (slot) => {
-    if (isSubmitting) return;
-
-    if (!clientName || !clientEmail) {
-      alert("Missing name or email. Please refresh or contact support.");
-      return;
-    }
-
-    // If you want phone required, keep this; otherwise remove it.
-    if (!clientPhone) {
-      alert("Please enter your phone number before booking.");
-      return;
-    }
-
-    const selected = appointmentTypes.find((a) => a.title === selectedAppointmentType);
-    const basePrice = Number(selected?.price ?? 0);
-
-    const appointmentData = {
-      title: selectedAppointmentType,
-      client_id: isPortal ? clientId : undefined,
-      client_name: clientName,
-      client_email: clientEmail,
-      client_phone: clientPhone,
-      date: selectedDate.toISOString().split("T")[0],
-      time: slot.start_time?.length === 5 ? `${slot.start_time}:00` : slot.start_time,
-      end_time: slot.end_time?.length === 5 ? `${slot.end_time}:00` : slot.end_time,
-      description: isPortal
-        ? `Client booked a ${selectedAppointmentType} appointment (portal)`
-        : `Client booked a ${selectedAppointmentType} appointment`,
-      price: basePrice,
-    };
-
-    try {
-      setIsSubmitting(true);
-
-      localStorage.setItem("pendingAppointment", JSON.stringify(appointmentData));
-
-      if (basePrice <= 0) {
-        navigate("/payment-success");
-        return;
-      }
-
-      const res = await axios.post(`${apiUrl}/api/create-payment-link`, {
-        email: clientEmail,
-        amount: basePrice,
-        itemName: selectedAppointmentType,
-        appointmentData,
-      });
-
-      window.location.href = res.data.url;
-    } catch (err) {
-      console.error("❌ Booking failed:", err);
-      alert("Booking failed. Please try again.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // =========================================
-  // Render
-  // =========================================
-  if (isPortal && profileLoading) {
-    return (
-      <div className="client-scheduling">
-        <h2>Schedule an Appointment</h2>
-        <p>Loading your portal profile…</p>
+  return <main className="scheduler-page">
+    <section className="scheduler-hero"><div className="scheduler-eyebrow">STEM WITH LYN</div><h1>Let’s find the right time to learn.</h1><p>Choose your session, pick an available time, and confirm your details. It only takes a minute.</p><div className="scheduler-trust-row"><span>✓ Live availability</span><span>✓ Secure checkout</span><span>✓ Instant confirmation</span></div></section>
+    <form className="scheduler-shell" onSubmit={handleSubmit} noValidate>
+      <div className="scheduler-main">
+        <section className="booking-section"><div className="section-heading"><span className="step-number">1</span><div><h2>Choose a service</h2><p>Select the session that best fits your goals.</p></div></div>
+          {categories.map((category) => <div className="service-category" key={category}><h3>{category}</h3><div className="service-grid">{appointmentTypes.filter((item) => item.category === category).map((item) => { const meta = getServiceMeta(item); const selected = item.title === selectedAppointmentType; return <button className={`service-card${selected ? " selected" : ""}`} type="button" key={item.title} onClick={() => { setSelectedAppointmentType(item.title); setSelectedSlot(null); setFormErr(""); }} aria-pressed={selected}><span className="service-check">{selected ? "✓" : ""}</span><strong>{item.title}</strong><span className="service-meta"><span>{meta.duration}</span><span>{meta.price}</span></span></button>; })}</div></div>)}
+        </section>
+        <section className="booking-section"><div className="section-heading"><span className="step-number">2</span><div><h2>Pick a date & time</h2><p>Times shown are in your local time zone.</p></div></div>
+          <div className="date-time-grid"><Calendar value={selectedDate} onChange={setSelectedDate} minDate={today} next2Label={null} prev2Label={null} calendarType="gregory" /><div className="time-panel"><div className="time-panel-heading"><strong>{formatDate(selectedDate)}</strong><span>{Intl.DateTimeFormat().resolvedOptions().timeZone.replaceAll("_", " ")}</span></div>
+            {!selectedService ? <div className="slot-message"><span>↑</span><p>Choose a service first to see available times.</p></div> : slotsLoading ? <div className="slot-message"><span className="loading-ring" /><p>Checking availability…</p></div> : slotsErr ? <div className="slot-message error"><p>{slotsErr}</p><button type="button" onClick={fetchAvailability}>Try again</button></div> : availableSlots.length === 0 ? <div className="slot-message"><span>Calendar</span><p>No openings on this date. Try another day.</p></div> : <div className="slot-grid">{availableSlots.map((slot) => { const selected = timeKey(selectedSlot?.start_time) === timeKey(slot.start_time); return <button type="button" className={`slot-button${selected ? " selected" : ""}`} key={`${slot.start_time}-${slot.end_time}`} onClick={() => { setSelectedSlot(slot); setFormErr(""); }} aria-pressed={selected}>{formatTime(slot.start_time)}</button>; })}</div>}
+          </div></div>
+        </section>
+        <section className="booking-section"><div className="section-heading"><span className="step-number">3</span><div><h2>Your details</h2><p>We’ll use these to send your confirmation.</p></div></div>{profileLoading && <div className="inline-notice">Loading your portal profile…</div>}{profileErr && <div className="inline-notice error">{profileErr}</div>}
+          <div className="details-grid"><label className="field"><span>Full name *</span><input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Your full name" autoComplete="name" /></label><label className="field"><span>Email address *</span><input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" /></label><label className="field"><span>Phone number *</span><input type="tel" value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} placeholder="(555) 123-4567" autoComplete="tel" /></label><label className="field field-wide"><span>Anything we should know? <small>Optional</small></span><textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Topics, goals, accessibility needs, or questions…" rows="4" /></label></div>
+        </section>
       </div>
-    );
-  }
-
-  return (
-    <div className="client-scheduling">
-      <h2>Schedule an Appointment</h2>
-
-      {/* ✅ Show real errors instead of silently blanking */}
-      {isPortal && profileErr && (
-        <p style={{ color: "red" }}>
-          {profileErr}
-        </p>
-      )}
-
-      <label>Client Name:</label>
-      <input
-        type="text"
-        value={clientName}
-        onChange={(e) => setClientName(e.target.value)}
-        placeholder="Enter your name"
-        disabled={isPortal && Boolean(clientName)} // ✅ only lock when we actually have a value
-      />
-
-      <label>Client Email:</label>
-      <input
-        type="email"
-        value={clientEmail}
-        onChange={(e) => setClientEmail(e.target.value)}
-        placeholder="Enter your email"
-        disabled={isPortal && Boolean(clientEmail)} // ✅ only lock when we actually have a value
-      />
-
-      <label>Client Phone Number:</label>
-      <input
-        type="phone"
-        value={clientPhone}
-        onChange={(e) => setClientPhone(e.target.value)}
-        placeholder="Enter your phone number"
-      />
-
-      <label>Select Appointment Type:</label>
-      <select
-        value={selectedAppointmentType}
-        onChange={(e) => setSelectedAppointmentType(e.target.value)}
-      >
-        <option value="">Select Appointment Type</option>
-        {appointmentTypes.map((appt) => (
-          <option key={appt.title} value={appt.title}>
-            {appt.title}
-          </option>
-        ))}
-      </select>
-
-      <label>Select Date:</label>
-      <Calendar onChange={setSelectedDate} value={selectedDate} onClickDay={() => fetchAvailability()} />
-
-      <h3>Available Slots</h3>
-      <ul>
-        {availableSlots.length === 0 ? (
-          <p>❌ No available slots for this date.</p>
-        ) : (
-          availableSlots.map((slot) => {
-            const key = `${selectedDate.toISOString().split("T")[0]}-${slot.start_time}-${slot.end_time}`;
-            return (
-              <li key={key} className="available-slot">
-                {formatTime(slot.start_time)} - {formatTime(slot.end_time)}
-                <button onClick={() => bookAppointment(slot)} disabled={isSubmitting}>
-                  {isSubmitting ? "Booking…" : "Book"}
-                </button>
-              </li>
-            );
-          })
-        )}
-      </ul>
-    </div>
-  );
+      <aside className="booking-summary"><div className="summary-label">BOOKING SUMMARY</div><h2>Your session</h2><div className="summary-row"><span>Service</span><strong>{selectedService?.title || "Not selected"}</strong></div><div className="summary-row"><span>Date</span><strong>{formatDate(selectedDate)}</strong></div><div className="summary-row"><span>Time</span><strong>{selectedSlot ? `${formatTime(selectedSlot.start_time)} – ${formatTime(selectedSlot.end_time)}` : "Not selected"}</strong></div><div className="summary-row total"><span>Total</span><strong>{serviceMeta?.price || "—"}</strong></div>{formErr && <div className="inline-notice error" role="alert">{formErr}</div>}<button className="confirm-button" type="submit" disabled={isSubmitting || profileLoading}>{isSubmitting ? "Securing your time…" : selectedService?.price > 0 ? "Continue to secure payment" : "Confirm appointment"}</button><p className="summary-footnote">By confirming, you agree to receive appointment updates by email or text.</p>{isPortal && <button className="back-link" type="button" onClick={() => navigate("/client-portal")}>← Back to client portal</button>}</aside>
+    </form>
+  </main>;
 };
-
 export default ClientSchedulingPage;

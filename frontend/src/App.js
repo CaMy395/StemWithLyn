@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, useLocation, Routes, Route, Link, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 //Public Pages
 import TutoringIntake from './components/Public/TutoringIntake';
 import TechIntake from './components/Public/TechIntake';
@@ -113,8 +113,6 @@ const App = () => {
 
 const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
     const username = localStorage.getItem("username");
-    const loggedInUser = JSON.parse(localStorage.getItem("loggedInUser")) || null;
-    const location = useLocation();
 
     const [openDropdown, setOpenDropdown] = useState(null);
 
@@ -165,6 +163,12 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
                 <li>
                     <Link to="/scholarships">
                         Scholarships
+                    </Link>
+                </li>
+
+                <li>
+                    <Link to="/client-scheduling">
+                        Schedule
                     </Link>
                 </li>
 
@@ -307,8 +311,8 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
 />
 
 <Route path="/scholarships" element={<ScholarshipsPage />} />
-                <Route path="/admin/scheduling-page" element={<SchedulingPage />} />
-                <Route path="/admin/availability-page" element={<AdminAvailabilityPage />} />
+                <Route path="/admin/scheduling-page" element={userRole === 'admin' ? <SchedulingPage /> : <Navigate to="/login" />} />
+                <Route path="/admin/availability-page" element={userRole === 'admin' ? <AdminAvailabilityPage /> : <Navigate to="/login" />} />
                 <Route path="/admin/clients" element={userRole === 'admin' ? <Clients /> : <Navigate to="/login" />} />
                 <Route path="/admin/profits" element={userRole === 'admin' ? <Profits /> : <Navigate to="/login" />} />
                 <Route path="/admin/intake-forms" element={userRole === 'admin' ? <AdminIntakeForms />: <Navigate to="/login" />} />
