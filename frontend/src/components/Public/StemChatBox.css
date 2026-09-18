@@ -1,0 +1,20 @@
+.stem-chat{position:fixed;right:16px;bottom:max(16px,env(safe-area-inset-bottom));z-index:1000;width:min(380px,calc(100vw - 32px));font-family:Arial,sans-serif;color:#28183a}
+.stem-chat-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;border:0;border-radius:14px;background:#54256e;color:#fff;box-shadow:0 12px 30px rgba(39,19,56,.24);font-size:14px;font-weight:800;cursor:pointer}
+.stem-chat-toggle span:last-child{font-size:20px;line-height:1}
+.stem-chat-panel{display:flex;flex-direction:column;gap:10px;height:min(490px,calc(100dvh - 95px));min-height:290px;margin-bottom:8px;padding:12px;border:1px solid #e1d5e8;border-radius:16px;background:#fff;box-shadow:0 20px 55px rgba(39,19,56,.22)}
+.stem-chat-messages{flex:1;overflow-y:auto;padding:6px;background:#faf7fc;border-radius:10px}
+.stem-chat-message{display:flex;margin:8px 0}
+.stem-chat-message.user{justify-content:flex-end}
+.stem-chat-message>div{max-width:86%;padding:10px 12px;border:1px solid #e6ddec;border-radius:12px;background:#fff;color:#30213b;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.45}
+.stem-chat-message.user>div{border-color:#683485;background:#683485;color:#fff}
+.stem-chat-message a{color:#6d328b;text-decoration:underline}
+.stem-chat-message.user a{color:#fff}
+.stem-chat-loading{padding:4px;color:#786a80;font-size:12px}
+.stem-chat-suggestions{display:flex;flex-wrap:wrap;gap:5px}
+.stem-chat-suggestions button{padding:6px 8px;border:1px solid #dfd1e7;border-radius:999px;background:#f9f3fc;color:#62387b;font-size:11px;cursor:pointer}
+.stem-chat form{display:flex;gap:7px;align-items:flex-end}
+.stem-chat textarea{flex:1;min-width:0;resize:none;padding:9px;border:1px solid #d9cbe0;border-radius:9px;font:inherit;font-size:13px;color:#28183a}
+.stem-chat form button{padding:10px 12px;border:0;border-radius:9px;background:#683485;color:#fff;font-size:12px;font-weight:800;cursor:pointer}
+.stem-chat form button:disabled{opacity:.55;cursor:default}
+.stem-chat-note{margin:0;color:#766c7d;font-size:10px;line-height:1.4}
+@media(max-width:480px){.stem-chat{right:10px;bottom:max(10px,env(safe-area-inset-bottom));width:calc(100vw - 20px)}.stem-chat-panel{height:min(420px,calc(100dvh - 86px))}}

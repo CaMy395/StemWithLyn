@@ -54,6 +54,7 @@ const Login = ({ onLogin }) => {
       localStorage.setItem("role", data.role);
       localStorage.setItem("userRole", data.role);
       localStorage.setItem("loggedInUser", JSON.stringify(data));
+      localStorage.setItem("portalToken", data.portalToken);
 
       onLogin(data.role);
 

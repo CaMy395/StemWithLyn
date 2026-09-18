@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import { Client } from 'square';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import moment from 'moment-timezone';
 import path from 'path'; // Import path to handle static file serving
 import { fileURLToPath } from 'url'; // Required for ES module __dirname
@@ -14,6 +15,8 @@ import 'dotenv/config';
 import {WebSocketServer} from 'ws';
 import http from 'http';
 import fs from 'fs';
+import stemAssistantRouter from './routes/stemAssistant.js';
+import createStudyLibraryRouter from './routes/studyLibrary.js';
 import { google } from 'googleapis';
 
 const oauth2Client = new google.auth.OAuth2(
@@ -27,6 +30,7 @@ oauth2Client.setCredentials({
 });
 
 const TZ = "America/New_York";
+const portalTokenSecret = process.env.PORTAL_TOKEN_SECRET || crypto.randomBytes(32).toString('hex');
 
 const normalizeTime = (t) => {
   if (!t) return null;
@@ -299,6 +303,9 @@ wss.on('connection', (ws, req) => {
 });
 
 app.use(express.json()); // Middleware to parse JSON bodies
+app.set('trust proxy', 1);
+app.use('/api/stem-assistant', stemAssistantRouter);
+app.use('/api/study', createStudyLibraryRouter(pool, portalTokenSecret));
 
 // Define __filename and __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -495,6 +502,7 @@ app.post('/login', async (req, res) => {
         username: user.username,
         email: user.email,
         role: user.role,
+        portalToken: jwt.sign({ userId: user.id }, portalTokenSecret, { expiresIn: '7d' }),
       });
 
     } catch (error) {
@@ -1010,6 +1018,7 @@ app.post("/client/appointments/:id/cancel", async (req, res) => {
     }
 
     const appt = apptRes.rows[0];
+    if (appt.paid && packageDetails(appt.title)) await loadPackagePurchases(pool, appt.client_id);
 
     // 2) Increment client cancel count
     // (If your column name differs, change it here)
@@ -1063,6 +1072,9 @@ app.post("/client/appointments/:id/reschedule", async (req, res) => {
     const { date, time, end_time } = req.body || {};
 
     if (!date || !time) return res.status(400).json({ error: "date and time are required." });
+    if (date <= getBusinessDateKey()) {
+      return res.status(400).json({ error: "Same-day rescheduling is unavailable. Please choose tomorrow or a later date." });
+    }
 
     const apptRes = await pool.query(
       `SELECT * FROM appointments WHERE id = $1 AND client_id = $2 LIMIT 1`,
@@ -1083,6 +1095,19 @@ app.post("/client/appointments/:id/reschedule", async (req, res) => {
 
     const newTime = normalizeTime(time);
     const newEnd = end_time ? normalizeTime(end_time) : appt.end_time;
+
+    const blockRows = await pool.query(
+      `SELECT time_slot, label FROM schedule_blocks WHERE date = $1`,
+      [date]
+    );
+    const requestedStart = timeToMinutes(newTime);
+    const requestedEnd = newEnd ? timeToMinutes(newEnd) : requestedStart + 30;
+    const overlapsBlock = blockRows.rows.some((block) => {
+      const blockStart = timeToMinutes(extractBlockedStartTime(block.time_slot));
+      const durationHours = Number(String(block.label || '').match(/\(([\d.]+)\s*hours?\)/i)?.[1]) || 1;
+      return requestedStart < blockStart + (durationHours * 60) && requestedEnd > blockStart;
+    });
+    if (overlapsBlock) return res.status(409).json({ error: "That time overlaps a blocked period." });
 
     // prevent conflicts
     const conflict = await pool.query(
@@ -1606,6 +1631,7 @@ app.post('/api/tech-intake', async (req, res) => {
         platform,
         experienceLevel,
         deadline,
+        paymentMethod,
         additionalDetails,
         haveBooked
     } = req.body;
@@ -1634,6 +1660,7 @@ app.post('/api/tech-intake', async (req, res) => {
             platform,
             experienceLevel,
             deadline || null,
+            paymentMethod || 'Not provided',
             additionalDetails || null,
             haveBooked === 'yes'
         ]);
@@ -2028,6 +2055,18 @@ app.post('/appointments', async (req, res) => {
       });
     }
 
+    if (!isAdmin && /\bSCHEDULING\b/i.test(title)) {
+      return res.status(403).json({ error: 'Book package sessions through your client portal.' });
+    }
+
+    // Public/client bookings require at least one full day's notice.
+    // Admin-created appointments remain exempt so staff can manage the calendar.
+    if (!isAdmin && date <= getBusinessDateKey()) {
+      return res.status(400).json({
+        error: "Same-day booking is unavailable. Please choose tomorrow or a later date.",
+      });
+    }
+
     // ----------------------------
     // Normalize times for DB "time" type
     // ----------------------------
@@ -2166,6 +2205,26 @@ app.post('/appointments', async (req, res) => {
     const created = [];
 
     for (const d of datesToCreate) {
+      if (!isAdmin) {
+        const blockRows = await pool.query(
+          `SELECT time_slot, label FROM schedule_blocks WHERE date = $1`,
+          [d]
+        );
+        const requestedStart = timeToMinutes(formattedTime);
+        const requestedEnd = formattedEndTime ? timeToMinutes(formattedEndTime) : requestedStart + 30;
+        const overlapsBlock = blockRows.rows.some((block) => {
+          const blockStart = timeToMinutes(extractBlockedStartTime(block.time_slot));
+          const durationHours = Number(String(block.label || '').match(/\(([\d.]+)\s*hours?\)/i)?.[1]) || 1;
+          const blockEnd = blockStart + (durationHours * 60);
+          return requestedStart < blockEnd && requestedEnd > blockStart;
+        });
+        if (overlapsBlock) {
+          return res.status(409).json({
+            error: "That time overlaps a blocked period. Please choose another time.",
+          });
+        }
+      }
+
       // conflict check (date + time)
       const conflict = await pool.query(
         `SELECT id FROM appointments WHERE date = $1 AND time = $2 LIMIT 1`,
@@ -2209,6 +2268,8 @@ app.post('/appointments', async (req, res) => {
         error: "No appointment was created (all requested slots were already booked).",
       });
     }
+
+    if (isPaid && packageDetails(title)) await loadPackagePurchases(pool, finalClientId);
 
     // ----------------------------
     // ✅ Create Google Calendar event(s) AFTER DB insert
@@ -2351,6 +2412,23 @@ app.get('/appointments/by-date', async (req, res) => {
 });
 
 
+const timeToMinutes = (value) => {
+    const [hours, minutes] = String(value || '00:00').slice(0, 5).split(':').map(Number);
+    return (hours * 60) + (minutes || 0);
+};
+const minutesToTime = (value) => `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
+const extractBlockedStartTime = (timeSlot) => {
+    const match = String(timeSlot || '').match(/(\d{2})(?::(\d{2}))?$/);
+    return match ? `${match[1]}:${match[2] || '00'}` : '00:00';
+};
+const getBusinessDateKey = () => {
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: process.env.BUSINESS_TIME_ZONE || 'America/New_York',
+        year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(new Date()).reduce((out, part) => ({ ...out, [part.type]: part.value }), {});
+    return `${parts.year}-${parts.month}-${parts.day}`;
+};
+
 app.get('/blocked-times', async (req, res) => {
     try {
         const { date } = req.query;
@@ -2361,10 +2439,19 @@ app.get('/blocked-times', async (req, res) => {
 
         // ✅ Fetch manually blocked times from `schedule_blocks`
         const blockedTimesResult = await pool.query(
-            `SELECT time_slot FROM schedule_blocks WHERE date = $1`,
+            `SELECT time_slot, label FROM schedule_blocks WHERE date = $1`,
             [date]
         );
         const blockedTimes = blockedTimesResult.rows.map(row => row.time_slot);
+        const blockIntervals = blockedTimesResult.rows.map(row => {
+            const start = extractBlockedStartTime(row.time_slot);
+            const durationHours = Number(String(row.label || '').match(/\(([\d.]+)\s*hours?\)/i)?.[1]) || 1;
+            return {
+                start,
+                end: minutesToTime(timeToMinutes(start) + (durationHours * 60)),
+                label: row.label || 'Blocked'
+            };
+        });
 
         // ✅ Fetch already booked appointments from `appointments`
         const bookedTimesResult = await pool.query(
@@ -2377,7 +2464,7 @@ app.get('/blocked-times', async (req, res) => {
         const allUnavailableTimes = [...new Set([...blockedTimes, ...bookedTimes])];
 
         
-        res.json({ blockedTimes: allUnavailableTimes });
+        res.json({ blockedTimes: allUnavailableTimes, blockIntervals });
 
     } catch (error) {
         console.error("❌ Error fetching blocked times:", error);
@@ -2519,6 +2606,170 @@ app.patch('/appointments/:id/paid', async (req, res) => {
 });
 
 // ✅ Admin deletes an appointment (deletes Google event + DB row)
+app.post('/appointments/bulk-delete', async (req, res) => {
+  try {
+    const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const payload = jwt.verify(token, portalTokenSecret);
+    const user = await pool.query('SELECT role FROM users WHERE id = $1 LIMIT 1', [payload.userId]);
+    if (user.rows[0]?.role !== 'admin') return res.status(403).json({ error: 'Admin account required.' });
+  } catch { return res.status(401).json({ error: 'Please sign in again.' }); }
+  const ids = req.body?.ids;
+  if (!Array.isArray(ids) || ids.length === 0 || ids.length > 500 ||
+      ids.some((id) => !Number.isSafeInteger(id) || id <= 0) ||
+      new Set(ids).size !== ids.length) {
+    return res.status(400).json({ error: 'Choose 1 to 500 valid appointment IDs.' });
+  }
+  try {
+    const found = await pool.query('SELECT * FROM appointments WHERE id = ANY($1::int[])', [ids]);
+    for (const clientId of new Set(found.rows.filter((appt) => appt.paid && packageDetails(appt.title)).map((appt) => appt.client_id))) {
+      await loadPackagePurchases(pool, clientId);
+    }
+    const removed = await pool.query('DELETE FROM appointments WHERE id = ANY($1::int[]) RETURNING id', [ids]);
+    const removedIds = new Set(removed.rows.map((row) => row.id));
+    const calendarFailures = [];
+    for (const appt of found.rows) {
+      if (!removedIds.has(appt.id)) continue;
+      try { await deleteGoogleCalendarEvent(appt); }
+      catch (error) { calendarFailures.push(appt.id); console.error('Bulk calendar deletion failed:', appt.id, error); }
+    }
+
+    return res.json({ deletedIds: [...removedIds], calendarFailures });
+  } catch (error) {
+    console.error('Bulk appointment deletion failed:', error);
+    return res.status(500).json({ error: 'Failed to delete appointments.' });
+  }
+});
+
+app.get('/api/tech-intake', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM tech_intake_forms ORDER BY created_at DESC');
+    return res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching tech intake forms:', error);
+    return res.status(500).json({ error: 'Failed to load tech intake forms.' });
+  }
+});
+
+app.delete('/api/tech-intake/:id', async (req, res) => {
+  try {
+    const result = await pool.query('DELETE FROM tech_intake_forms WHERE id = $1 RETURNING id', [req.params.id]);
+    if (!result.rowCount) return res.status(404).json({ error: 'Form not found.' });
+    return res.json({ deletedId: result.rows[0].id });
+  } catch (error) {
+    console.error('Error deleting tech intake form:', error);
+    return res.status(500).json({ error: 'Failed to delete tech intake form.' });
+  }
+});
+
+const packageDetails = (title) => {
+  const match = String(title || '').match(/^(Virtual Tutoring Package|In-Person Tutoring) \((6|10) sessions/i);
+  if (!match) return null;
+  return { key: `${match[1]}:${match[2]}`, title: `${match[1]} (${match[2]} sessions - SCHEDULING)`, total: Number(match[2]) };
+};
+
+const loadPackagePurchases = async (db, clientId) => {
+  await db.query(`CREATE TABLE IF NOT EXISTS tutoring_package_purchases (
+    id bigserial PRIMARY KEY,
+    source_appointment_id integer UNIQUE NOT NULL,
+    client_id integer NOT NULL,
+    title text NOT NULL,
+    total integer NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  const appointments = await db.query('SELECT id, title, paid, price FROM appointments WHERE client_id = $1', [clientId]);
+  for (const appt of appointments.rows) {
+    const details = packageDetails(appt.title);
+    if (!details || !appt.paid || Number(appt.price) <= 0 || /SCHEDULING/i.test(appt.title)) continue;
+    await db.query(`INSERT INTO tutoring_package_purchases (source_appointment_id, client_id, title, total)
+      VALUES ($1,$2,$3,$4) ON CONFLICT (source_appointment_id) DO NOTHING`, [appt.id, clientId, appt.title, details.total]);
+  }
+  const purchases = await db.query('SELECT title, total FROM tutoring_package_purchases WHERE client_id = $1', [clientId]);
+  return { purchases: purchases.rows, appointments: appointments.rows };
+};
+
+const packageBalances = (purchases, appointments) => {
+  const balances = new Map();
+  for (const purchase of purchases) {
+    const details = packageDetails(purchase.title);
+    if (!details) continue;
+    const current = balances.get(details.key) || { ...details, purchased: 0, booked: 0 };
+    current.purchased += Number(purchase.total);
+    balances.set(details.key, current);
+  }
+  for (const appt of appointments) {
+    for (const balance of balances.values()) {
+      if (appt.title === balance.title) balance.booked += 1;
+      else if (packageDetails(appt.title)?.key === balance.key && appt.paid && Number(appt.price) > 0) balance.booked += 1;
+    }
+  }
+  return [...balances.values()].map((balance) => ({ ...balance, remaining: Math.max(0, balance.purchased - balance.booked) }));
+};
+
+const requireSignedClientUser = async (req) => {
+  try {
+    const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const payload = jwt.verify(token, portalTokenSecret);
+    const result = await pool.query('SELECT id, role FROM users WHERE id = $1 LIMIT 1', [payload.userId]);
+    const user = result.rows[0];
+    if (!user || user.role === 'admin') return { ok: false, status: 403, error: 'Client account required.' };
+    return { ok: true, user };
+  } catch { return { ok: false, status: 401, error: 'Please sign in again to manage your package.' }; }
+};
+
+app.get('/client/packages', async (req, res) => {
+  const auth = await requireSignedClientUser(req);
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+  const client = await pool.query('SELECT id FROM clients WHERE user_id = $1 LIMIT 1', [auth.user.id]);
+  if (!client.rowCount) return res.json([]);
+  try {
+    const data = await loadPackagePurchases(pool, client.rows[0].id);
+    return res.json(packageBalances(data.purchases, data.appointments));
+  } catch (error) { console.error('Package balance failed:', error); return res.status(500).json({ error: 'Could not load packages.' }); }
+});
+
+app.post('/client/packages/book', async (req, res) => {
+  const auth = await requireSignedClientUser(req);
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+  const { title, date, time, end_time } = req.body || {};
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '') || date <= getBusinessDateKey() ||
+      !/^\d{2}:\d{2}(:\d{2})?$/.test(time || '') || !/^\d{2}:\d{2}(:\d{2})?$/.test(end_time || '')) {
+    return res.status(400).json({ error: 'Choose an available date and time after today.' });
+  }
+  if (timeToMinutes(time) >= timeToMinutes(end_time)) return res.status(400).json({ error: 'Choose a valid time slot.' });
+  const db = await pool.connect();
+  let created;
+  let client;
+  try {
+    await db.query('BEGIN');
+    const clientResult = await db.query('SELECT id, full_name, email FROM clients WHERE user_id = $1 LIMIT 1', [auth.user.id]);
+    if (!clientResult.rowCount) { await db.query('ROLLBACK'); return res.status(404).json({ error: 'Client profile not found.' }); }
+    client = clientResult.rows[0];
+    await db.query('SELECT pg_advisory_xact_lock($1)', [client.id]);
+    await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`package-slot:${date}:${time}`]);
+    const packageData = await loadPackagePurchases(db, client.id);
+    const balance = packageBalances(packageData.purchases, packageData.appointments).find((item) => item.title === title);
+    if (!balance || balance.remaining < 1) { await db.query('ROLLBACK'); return res.status(409).json({ error: 'No package sessions remain for this service.' }); }
+    const weekday = new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long', timeZone: process.env.BUSINESS_TIME_ZONE || 'America/New_York' });
+    const slot = await db.query(`SELECT 1 FROM weekly_availability WHERE lower(weekday) = lower($1) AND appointment_type = $2 AND start_time = $3::time AND end_time = $4::time LIMIT 1`, [weekday, title, time, end_time]);
+    if (!slot.rowCount) { await db.query('ROLLBACK'); return res.status(409).json({ error: 'This time is no longer available.' }); }
+    const conflict = await db.query(`SELECT 1 FROM appointments WHERE date = $1 AND time < $3::time AND COALESCE(end_time, time + interval '30 minutes') > $2::time LIMIT 1`, [date, time, end_time]);
+    const blocks = await db.query('SELECT time_slot, label FROM schedule_blocks WHERE date = $1', [date]);
+    const start = timeToMinutes(time), end = timeToMinutes(end_time);
+    const blocked = blocks.rows.some((block) => { const blockStart = timeToMinutes(extractBlockedStartTime(block.time_slot)); const hours = Number(String(block.label || '').match(/\(([\d.]+)\s*hours?\)/i)?.[1]) || 1; return start < blockStart + hours * 60 && end > blockStart; });
+    if (conflict.rowCount || blocked) { await db.query('ROLLBACK'); return res.status(409).json({ error: 'This time is already booked or blocked.' }); }
+    const result = await db.query(`INSERT INTO appointments (title, client_id, date, time, end_time, description, paid, price, addons) VALUES ($1,$2,$3,$4,$5,$6,true,0,'[]') RETURNING *`, [title, client.id, date, time, end_time, 'Booked from tutoring package']);
+    created = result.rows[0];
+    await db.query('COMMIT');
+  } catch (error) {
+    await db.query('ROLLBACK');
+    console.error('Package booking failed:', error);
+    return res.status(500).json({ error: 'Could not book the package session.' });
+  } finally { db.release(); }
+  try { await createGoogleCalendarEventAndStore(created, client); }
+  catch (error) { console.error('Package calendar event failed:', error); }
+  return res.status(201).json({ appointment: created });
+});
+
 app.delete("/appointments/:id", async (req, res) => {
   const { id } = req.params;
   const appointmentId = parseInt(id, 10);
@@ -2542,6 +2793,8 @@ app.delete("/appointments/:id", async (req, res) => {
     }
 
     const appt = appointmentResult.rows[0];
+
+    if (appt.paid && packageDetails(appt.title)) await loadPackagePurchases(pool, appt.client_id);
 
     // 2) Delete Google Calendar event FIRST
     try {
@@ -2841,7 +3094,8 @@ app.post('/api/profits', async (req, res) => {
 app.get('/api/profits', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT id, category, description, amount, type, created_at
+      SELECT id, category, description, amount, type, created_at,
+             gross_amount, fee_amount, net_amount, processor, processor_txn_id
       FROM profits
       ORDER BY created_at DESC;
     `);
@@ -2958,6 +3212,58 @@ export default app;
 // Start the server
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
+});
+
+app.post('/api/profits/square-payment', async (req, res) => {
+  try {
+    const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const payload = jwt.verify(token, portalTokenSecret);
+    const user = await pool.query('SELECT role FROM users WHERE id = $1 LIMIT 1', [payload.userId]);
+    if (user.rows[0]?.role !== 'admin') return res.status(403).json({ error: 'Admin account required.' });
+  } catch { return res.status(401).json({ error: 'Please sign in again.' }); }
+
+  const paymentId = String(req.body?.paymentId || '').trim();
+  const profitId = req.body?.profitId == null ? null : Number(req.body.profitId);
+  if (!paymentId || paymentId.length > 100 || (profitId !== null && (!Number.isSafeInteger(profitId) || profitId <= 0))) {
+    return res.status(400).json({ error: 'Enter a valid Square payment ID.' });
+  }
+  try {
+    const response = await client.paymentsApi.getPayment(paymentId);
+    const payment = response?.result?.payment;
+    if (payment?.status !== 'COMPLETED' || payment.amountMoney?.currency !== 'USD') {
+      return res.status(400).json({ error: 'A completed USD payment is required.' });
+    }
+    if (!Array.isArray(payment.processingFee) || payment.processingFee.length === 0) {
+      return res.status(409).json({ error: 'Square has not posted the processing fee yet. Try again later.' });
+    }
+    const grossCents = Number(payment.amountMoney.amount);
+    const feeCents = payment.processingFee.reduce((sum, item) => sum + Number(item.amountMoney?.amount || 0), 0);
+    if (!Number.isSafeInteger(grossCents) || !Number.isSafeInteger(feeCents)) {
+      return res.status(422).json({ error: 'Square returned an invalid payment amount or fee.' });
+    }
+    const existing = await pool.query('SELECT id FROM profits WHERE processor_txn_id = $1 LIMIT 1', [paymentId]);
+    if (existing.rowCount && existing.rows[0].id !== profitId) {
+      return res.status(409).json({ error: 'This Square payment is already recorded in profits.' });
+    }
+    const gross = grossCents / 100, fee = feeCents / 100, net = (grossCents - feeCents) / 100;
+    const description = `Square payment ${paymentId}`;
+    let result;
+    if (profitId !== null) {
+      result = await pool.query(`UPDATE profits SET amount = $1, gross_amount = $2, fee_amount = $3, net_amount = $1,
+        processor = 'Square', processor_txn_id = $4, type = 'Tutoring Payment', category = 'Income',
+        description = replace(description, '(Square fee estimated)', '(Square fee verified)')
+        WHERE id = $5 RETURNING *`, [net, gross, fee, paymentId, profitId]);
+      if (!result.rowCount) return res.status(404).json({ error: 'Profit record not found.' });
+    } else {
+      result = await pool.query(`INSERT INTO profits (category, description, amount, type, processor, processor_txn_id,
+        gross_amount, fee_amount, net_amount) VALUES ('Income', $1, $2, 'Tutoring Payment', 'Square', $3, $4, $5, $2) RETURNING *`,
+        [description, net, paymentId, gross, fee]);
+    }
+    return res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Square profit reconciliation failed:', error);
+    return res.status(502).json({ error: 'Could not retrieve the Square payment.' });
+  }
 });
 
 app.patch('/api/profits/:id', async (req, res) => {

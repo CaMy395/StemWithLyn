@@ -19,6 +19,7 @@ const ClientPortalPage = () => {
       "Content-Type": "application/json",
       "x-user-id": loggedInUser?.id ? String(loggedInUser.id) : "",
       "x-username": loggedInUser?.username || "",
+      Authorization: `Bearer ${localStorage.getItem("portalToken") || ""}`,
     };
   }, [loggedInUser]);
 
@@ -27,6 +28,7 @@ const ClientPortalPage = () => {
 
   const [client, setClient] = useState(null);
   const [appointments, setAppointments] = useState([]);
+  const [packages, setPackages] = useState([]);
 
   const [showReschedule, setShowReschedule] = useState(false);
   const [reschedAppt, setReschedAppt] = useState(null);
@@ -110,6 +112,8 @@ const ClientPortalPage = () => {
 
         const apptData = await apptRes.json();
         setAppointments(Array.isArray(apptData) ? apptData : []);
+        const packageRes = await fetch(`${apiUrl}/client/packages`, { headers: authHeaders });
+        if (packageRes.ok) setPackages(await packageRes.json());
       } catch (e) {
         setErr(e.message || "Something went wrong.");
       } finally {
@@ -255,20 +259,14 @@ const ClientPortalPage = () => {
       );
       const bookedData = bookedRes.ok ? await bookedRes.json() : [];
 
-      const blockedTimes = (blockedData?.blockedTimes || []).map((time) => {
-        const raw = String(time || "");
-        if (raw.includes("-")) {
-          const last = raw.split("-").pop();
-          return `${String(last).padStart(2, "0")}:00:00`;
-        }
-        return normalizeTime(raw);
-      });
-
-      const bookedTimes = (Array.isArray(bookedData) ? bookedData : [])
-        .filter((a) => Number(a.id) !== Number(appt.id))
-        .map((a) => normalizeTime(a.time));
-
-      const unavailable = new Set([...blockedTimes, ...bookedTimes]);
+      const toMinutes = (value) => {
+        const [hours, minutes] = String(normalizeTime(value)).split(":").map(Number);
+        return (hours * 60) + (minutes || 0);
+      };
+      const overlaps = (startA, endA, startB, endB) => startA < endB && endA > startB;
+      const blockIntervals = Array.isArray(blockedData?.blockIntervals) ? blockedData.blockIntervals : [];
+      const bookedAppointments = (Array.isArray(bookedData) ? bookedData : [])
+        .filter((a) => Number(a.id) !== Number(appt.id));
 
       const slots = (Array.isArray(availabilityData) ? availabilityData : [])
         .map((slot) => ({
@@ -276,7 +274,18 @@ const ClientPortalPage = () => {
           start_time: normalizeTime(slot.start_time),
           end_time: normalizeTime(slot.end_time),
         }))
-        .filter((slot) => slot.start_time && !unavailable.has(slot.start_time))
+        .filter((slot) => {
+          if (!slot.start_time) return false;
+          const slotStart = toMinutes(slot.start_time);
+          const slotEnd = toMinutes(slot.end_time);
+          const hitsBlock = blockIntervals.some((block) => overlaps(slotStart, slotEnd, toMinutes(block.start), toMinutes(block.end)));
+          const hitsAppointment = bookedAppointments.some((booked) => {
+            const bookedStart = toMinutes(booked.time);
+            const bookedEnd = booked.end_time ? toMinutes(booked.end_time) : bookedStart + 30;
+            return overlaps(slotStart, slotEnd, bookedStart, bookedEnd);
+          });
+          return !hitsBlock && !hitsAppointment;
+        })
         .sort((a, b) => {
           const ta = String(a.start_time || "");
           const tb = String(b.start_time || "");
@@ -395,6 +404,7 @@ const ClientPortalPage = () => {
         </section>
 
         <section className="portal-stats"><article><FaCalendarAlt /><div><strong>{upcoming.length}</strong><span>Upcoming</span></div></article><article><FaClock /><div><strong>{past.length}</strong><span>Completed</span></div></article><article><FaUser /><div><strong>{client?.category || "STEM"}</strong><span>Program</span></div></article></section>
+        {packages.length > 0 && <section className="portal-card"><h2>Your tutoring packages</h2><p>Book your remaining sessions whenever an available time works for you.</p>{packages.map((item) => <div key={item.key} style={{ display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'space-between', padding: '12px 0' }}><span>{item.title.replace(' - SCHEDULING', '')}: <strong>{item.remaining} of {item.purchased} sessions left</strong></span>{item.remaining > 0 && <Link to={`/client-portal/schedule?appointmentType=${encodeURIComponent(item.title)}`}>Book a session</Link>}</div>)}</section>}
 
         {err && <div className="portal-error">{err}</div>}
 
@@ -573,6 +583,7 @@ const ClientPortalPage = () => {
                 <input
                   type="date"
                   value={newDate}
+                  min={(() => { const date = new Date(); date.setDate(date.getDate() + 1); return date.toLocaleDateString("en-CA"); })()}
                   onChange={async (e) => {
                     const value = e.target.value;
                     setNewDate(value);

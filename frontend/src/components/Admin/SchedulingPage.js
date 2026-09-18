@@ -16,6 +16,8 @@ const toDateKey = (value) => {
 
 const SchedulingPage = () => {
     const [appointments, setAppointments] = useState([]);
+    const [selectedAppointmentIds, setSelectedAppointmentIds] = useState([]);
+    const [bulkDeleting, setBulkDeleting] = useState(false);
     const [clients, setClients] = useState([]);
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [blockedTimes, setBlockedTimes] = useState([]);
@@ -62,9 +64,10 @@ const SchedulingPage = () => {
             console.log("📥 RAW Blocked Times Response:", JSON.stringify(response.data, null, 2));
     
             if (response.data.blockedTimes && response.data.blockedTimes.length > 0) {
-                const updatedBlockedTimes = response.data.blockedTimes.map(({ timeSlot, label, date }) => ({
+                const updatedBlockedTimes = response.data.blockedTimes.map(({ timeSlot, label, date, duration }) => ({
                     timeSlot: timeSlot.trim(),
                     label: label ? label.trim() : "Blocked",
+                    duration: Number(duration) || Number(label?.match(/\(([\d.]+)\s*hours?\)/i)?.[1]) || 1,
                     date: new Date(date).toISOString().split('T')[0] // ✅ Ensure date is in YYYY-MM-DD format
                 }));
                 
@@ -303,7 +306,10 @@ const safeEndTime = endTime ? String(endTime) : "";
     
             if (response.data.success) {
                 console.log("✅ Blocked time successfully posted:", response.data);
-                setBlockedTimes(prev => [...prev.filter(bt => bt.date !== blockDate), blockedTimeEntry]);
+                setBlockedTimes(prev => [
+                    ...prev.filter(bt => !(bt.date === blockDate && bt.timeSlot === blockedTimeEntry.timeSlot)),
+                    blockedTimeEntry
+                ]);
             } else {
                 console.error("❌ Failed to post blocked time:", response.data);
             }
@@ -349,6 +355,21 @@ const safeEndTime = endTime ? String(endTime) : "";
             })
             .catch((err) => alert('Error deleting appointment:', err));
         }
+    };
+
+    const handleBulkDelete = async () => {
+        if (!selectedAppointmentIds.length || bulkDeleting) return;
+        if (!window.confirm(`Delete ${selectedAppointmentIds.length} selected sessions? Calendar invitations may send cancellation notices.`)) return;
+        setBulkDeleting(true);
+        try {
+            const { data } = await axios.post(`${apiUrl}/appointments/bulk-delete`, { ids: selectedAppointmentIds }, { headers: { Authorization: `Bearer ${localStorage.getItem('portalToken') || ''}` } });
+            const deleted = new Set(data.deletedIds || []);
+            setAppointments((prev) => prev.filter((appt) => !deleted.has(appt.id)));
+            setSelectedAppointmentIds([]);
+            setStatus({ type: 'success', message: `${deleted.size} sessions deleted.${data.calendarFailures?.length ? ` ${data.calendarFailures.length} calendar events could not be removed.` : ''}` });
+        } catch (error) {
+            setStatus({ type: 'error', message: error?.response?.data?.error || 'Could not delete selected sessions.' });
+        } finally { setBulkDeleting(false); }
     };
 
     const handleDeleteBlockedTime = async (blocked) => {
@@ -630,6 +651,12 @@ const safeEndTime = endTime ? String(endTime) : "";
                 <label className="blocks"><input type="checkbox" checked={filters.blocks} onChange={(e) => setFilters({ ...filters, blocks: e.target.checked })} /> Blocked time <span>{blockedTimes.length}</span></label>
             </div>
 
+            <div className="stem-scheduler-filters">
+                <button type="button" onClick={() => setSelectedAppointmentIds(dayAppointments.map((appt) => appt.id))}>Select all on this day</button>
+                <button type="button" onClick={() => setSelectedAppointmentIds([])}>Clear selection</button>
+                <button type="button" disabled={!selectedAppointmentIds.length || bulkDeleting} onClick={handleBulkDelete}>Delete selected ({selectedAppointmentIds.length})</button>
+            </div>
+
             {status.message && <div className={`stem-scheduler-status ${status.type}`}><span>{status.message}</span><button onClick={() => setStatus({ type: '', message: '' })}><FaTimes /></button></div>}
             {isLoading && <div className="stem-scheduler-loading"><span /> Loading schedule…</div>}
 
@@ -641,7 +668,7 @@ const safeEndTime = endTime ? String(endTime) : "";
                 <div className="stem-agenda-heading"><div><span>SELECTED DAY</span><h2>{selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</h2></div><button onClick={() => { setEditingAppointment(null); setNewAppointment({ title: '', client: '', date: selectedKey, time: '', endTime: '', description: '', recurrence: '', occurrences: 1, weekdays: [] }); setShowAppointmentModal(true); }}><FaPlus /> Appointment</button></div>
                 {dayAppointments.length === 0 && dayBlocks.length === 0 && <div className="stem-empty-agenda"><FaCalendarAlt /><strong>Nothing scheduled</strong><span>This day is open. Add an appointment or block off time.</span></div>}
                 <div className="stem-agenda-grid">
-                    {dayAppointments.map((appointment) => <article className="stem-agenda-card appointment" key={appointment.id}><div className="stem-agenda-time">{formatTime(appointment.time)}<small>{formatTime(appointment.end_time)}</small></div><div className="stem-agenda-copy"><span>APPOINTMENT</span><strong>{appointment.title}</strong><p>{clients.find((client) => Number(client.id) === Number(appointment.client_id))?.full_name || appointment.client_name || 'Client'}</p>{appointment.description && <small>{appointment.description}</small>}</div><div className="stem-card-actions"><button onClick={() => handleEditAppointment(appointment)} aria-label="Edit"><FaEdit /></button><button className="danger" onClick={() => handleDeleteAppointment(appointment.id)} aria-label="Delete"><FaTrash /></button></div></article>)}
+                    {dayAppointments.map((appointment) => <article className="stem-agenda-card appointment" key={appointment.id}><label aria-label={`Select ${appointment.title}`}><input type="checkbox" checked={selectedAppointmentIds.includes(appointment.id)} onChange={(e) => setSelectedAppointmentIds((prev) => e.target.checked ? [...prev, appointment.id] : prev.filter((id) => id !== appointment.id))} /></label><div className="stem-agenda-time">{formatTime(appointment.time)}<small>{formatTime(appointment.end_time)}</small></div><div className="stem-agenda-copy"><span>APPOINTMENT</span><strong>{appointment.title}</strong><p>{clients.find((client) => Number(client.id) === Number(appointment.client_id))?.full_name || appointment.client_name || 'Client'}</p>{appointment.description && <small>{appointment.description}</small>}</div><div className="stem-card-actions"><button onClick={() => handleEditAppointment(appointment)} aria-label="Edit"><FaEdit /></button><button className="danger" onClick={() => handleDeleteAppointment(appointment.id)} aria-label="Delete"><FaTrash /></button></div></article>)}
                     {dayBlocks.map((blocked) => <article className="stem-agenda-card block" key={`${blocked.date}-${blocked.timeSlot}`}><div className="stem-agenda-time">{formatTime(blocked.timeSlot.split('-').pop())}</div><div className="stem-agenda-copy"><span>BLOCKED</span><strong>{blocked.label || 'Unavailable'}</strong></div><div className="stem-card-actions"><button className="danger" onClick={() => handleDeleteBlockedTime(blocked)} aria-label="Delete"><FaTrash /></button></div></article>)}
                 </div>
             </section>

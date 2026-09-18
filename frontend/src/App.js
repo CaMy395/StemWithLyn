@@ -24,6 +24,8 @@ import AdminDashboard from './components/Admin/AdminDashboard';
 import MentorSessionLog from './components/Admin/MentorSessionLog';
 import PaymentSuccess from './components/Public/PaymentSuccess';
 import ScholarshipsPage from './components/Public/ScholarshipsPage';
+import StemChatBox from './components/Public/StemChatBox';
+import StudyLibraryPage from './components/Study/StudyLibraryPage';
 
 import WebSocketProvider from './WebSocketProvider';
 import './App.css';
@@ -50,6 +52,7 @@ const App = () => {
 
     const handleLogout = () => {
   localStorage.removeItem("loggedInUser");
+  localStorage.removeItem("portalToken");
   localStorage.removeItem("username");
   localStorage.removeItem("role");
   localStorage.removeItem("userRole");
@@ -68,14 +71,15 @@ const App = () => {
             try {
                 const responses = await Promise.all([
                     fetch(`${apiUrl}/api/tutoring-intake`),
+                    fetch(`${apiUrl}/api/tech-intake`),
                 ]);
 
-                const [tutoringData] = await Promise.all(
+                const [tutoringData, techData] = await Promise.all(
                     responses.map((res) => (res.ok ? res.json() : []))
                 );
 
                 const totalCount =
-                    (tutoringData?.length || 0);
+                    (tutoringData?.length || 0) + (techData?.length || 0);
 
                 setTotalFormsCount(totalCount);
             } catch (error) {
@@ -166,6 +170,7 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
                     </Link>
                 </li>
 
+
                 <li>
                     <Link to="/client-scheduling">
                         Schedule
@@ -225,6 +230,7 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
                         Clients
                     </Link>
                 </li>
+                <li><Link to="/admin/study-library">Study Library</Link></li>
 
             </ul>
 
@@ -247,6 +253,7 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
                         Book Appointment
                     </Link>
                 </li>
+                <li><Link to="/client-portal/study-library">Study Library</Link></li>
 
             </ul>
 
@@ -297,6 +304,8 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
                 <Route path="/client-scheduling-success" element={<PaymentSuccess />} />
                 <Route path="/payment-success" element={<PaymentSuccess />} />
                 <Route path="/admin" element={userRole === 'admin' ? <AdminDashboard /> : <Navigate to="/login" />} />
+                <Route path="/admin/study-library" element={userRole === 'admin' ? <StudyLibraryPage adminMode /> : <Navigate to="/login" />} />
+                <Route path="/client-portal/study-library" element={userRole && userRole !== 'admin' ? <StudyLibraryPage /> : <Navigate to="/login" />} />
 <Route
   path="/client-portal"
   element={userRole && userRole !== "admin" ? <ClientPortalPage /> : <Navigate to="/login" />}
@@ -320,6 +329,7 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
                 <Route path="/admin/mentors-log" element={userRole === 'admin' ? <MentorSessionLog /> : <Navigate to="/login" />} />
 
             </Routes>
+            {userRole !== 'admin' && <StemChatBox />}
         </div>
     );
 };
