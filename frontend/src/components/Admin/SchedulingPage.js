@@ -487,20 +487,17 @@ const safeEndTime = endTime ? String(endTime) : "";
                                         );
                                     });
                                     
-                                    const blockedEntriesAtTime = blockedTimes.map((b) => {
-                                        const [startHour, startMinutes] = b.timeSlot.split('-').pop().split(':').map(Number);
-                                    
-                                        // Extract duration from label (e.g., "test (1 hours)")
-                                        let durationMatch = b.label.match(/\((\d+(\.\d+)?)\s*hours?\)/i);
-                                        let duration = durationMatch ? parseFloat(durationMatch[1]) : 1; // Default to 1 hour if missing
-                                    
-                                        return {
-                                            ...b,
-                                            startHour,
-                                            startMinutes: startMinutes || 0, // Ensure minutes are set
-                                            duration, // Use extracted duration
-                                        };
-                                    }).filter(b => b.date === dayString && b.startHour === hour);
+                                    const blockedEntriesAtTime = blockedTimes.flatMap((b) => {
+                                        if (b.date !== dayString) return [];
+                                        const [startHour, startMinutes = 0] = b.timeSlot.split('-').pop().split(':').map(Number);
+                                        const duration = Number(b.duration) || Number(b.label?.match(/\(([\d.]+)\s*hours?\)/i)?.[1]) || 1;
+                                        const blockStart = startHour * 60 + startMinutes;
+                                        const blockEnd = blockStart + duration * 60;
+                                        const slotStart = hour * 60;
+                                        const segmentStart = Math.max(blockStart, slotStart);
+                                        const segmentEnd = Math.min(blockEnd, slotStart + 60);
+                                        return segmentEnd > segmentStart ? [{ ...b, segmentStart, segmentEnd, slotStart, firstSegment: blockStart >= slotStart }] : [];
+                                    });
                                     
                                     return (
                                         <td
@@ -525,31 +522,32 @@ const safeEndTime = endTime ? String(endTime) : "";
                                             onDragOver={(e) => e.preventDefault()} // <<< ⭐ ALLOW DROP
                                             onDrop={(e) => handleDrop(e, dayString, hour)} // <<< ⭐ HANDLE DROP
                                         >
-                                            {/* Render blocked slots exactly like appointments */}
+                                            {/* Paint each hour touched by a blocked interval, including partial hours. */}
                                             {blockedEntriesAtTime.map((blocked, index) => {
-                                                const [, startMinutes] = blocked.timeSlot.split('-').pop().split(':').map(Number);
-                                                const blockTop = (startMinutes / 60) * 100; // Align inside the hour
-                                                const blockHeight = blocked.duration * 100; // Each hour = 100% of the row height
-                                        
                                                 return (
                                                     <div
-                                                        key={index}
+                                                        key={`${blocked.timeSlot}-${index}`}
                                                         className="blocked-indicator"
+                                                        title={blocked.label || 'Blocked'}
                                                         style={{
                                                             position: 'absolute',
-                                                            top: `${blockTop}%`, 
+                                                            top: `${((blocked.segmentStart - blocked.slotStart) / 60) * 100}%`,
                                                             left: 0,
                                                             right: 0,
-                                                            height: `${blockHeight}%`, 
+                                                            height: `${((blocked.segmentEnd - blocked.segmentStart) / 60) * 100}%`,
                                                             backgroundColor: '#d3d3d3',
                                                             textAlign: 'center',
                                                             fontWeight: 'bold',
                                                             display: 'flex',
                                                             alignItems: 'center',
                                                             justifyContent: 'center',
+                                                            zIndex: 2,
+                                                            boxSizing: 'border-box',
+                                                            overflow: 'hidden',
                                                         }}
+                                                        onClick={(event) => event.stopPropagation()}
                                                     >
-                                                        {blocked.label || "Blocked"}
+                                                        {blocked.firstSegment ? (blocked.label || 'Blocked') : 'Blocked'}
                                                     </div>
                                                 );
                                             })}
