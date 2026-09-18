@@ -26,6 +26,7 @@ const SchedulingPage = () => {
     const [blockDate, setBlockDate] = useState('');
     const [blockStartTime, setBlockStartTime] = useState('');
     const [blockDuration, setBlockDuration] = useState(1);
+    const [blockWholeDay, setBlockWholeDay] = useState(false);
     const [blockLabel, setBlockLabel] = useState('');
     const [holidays, setHolidays] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -286,19 +287,19 @@ const safeEndTime = endTime ? String(endTime) : "";
       };     
     
     const handleBlockTime = async () => {
-        if (!blockDate || !blockStartTime || !blockDuration || !blockLabel) {
+        if (!blockDate || (!blockWholeDay && (!blockStartTime || !blockDuration)) || !blockLabel.trim()) {
             alert("⚠️ Please fill in all fields.");
             return;
         }
     
-        let [startHour, startMinutes] = blockStartTime.split(":").map(Number);
-        const startTime = `${startHour.toString().padStart(2, "0")}:${startMinutes.toString().padStart(2, "0")}`;
+        const startTime = blockWholeDay ? '00:00' : blockStartTime;
+        const duration = blockWholeDay ? 24 : Number(blockDuration);
         
         const blockedTimeEntry = {
             timeSlot: `${blockDate}-${startTime}`, // Store only the start time
-            label: `${blockLabel} (${blockDuration} hours)`, // Store duration in label
+            label: `${blockLabel.trim()} (${duration} hours)`, // Store duration in label
             date: blockDate,
-            duration: blockDuration, // Explicitly store duration
+            duration,
         };
     
         try {
@@ -318,6 +319,7 @@ const safeEndTime = endTime ? String(endTime) : "";
             setBlockDate('');
             setBlockStartTime('');
             setBlockDuration(1);
+            setBlockWholeDay(false);
             setBlockLabel('');
         } catch (error) {
             console.error("❌ Error posting blocked time:", error);
@@ -667,7 +669,7 @@ const safeEndTime = endTime ? String(endTime) : "";
                 {dayAppointments.length === 0 && dayBlocks.length === 0 && <div className="stem-empty-agenda"><FaCalendarAlt /><strong>Nothing scheduled</strong><span>This day is open. Add an appointment or block off time.</span></div>}
                 <div className="stem-agenda-grid">
                     {dayAppointments.map((appointment) => <article className="stem-agenda-card appointment" key={appointment.id}><label aria-label={`Select ${appointment.title}`}><input type="checkbox" checked={selectedAppointmentIds.includes(appointment.id)} onChange={(e) => setSelectedAppointmentIds((prev) => e.target.checked ? [...prev, appointment.id] : prev.filter((id) => id !== appointment.id))} /></label><div className="stem-agenda-time">{formatTime(appointment.time)}<small>{formatTime(appointment.end_time)}</small></div><div className="stem-agenda-copy"><span>APPOINTMENT</span><strong>{appointment.title}</strong><p>{clients.find((client) => Number(client.id) === Number(appointment.client_id))?.full_name || appointment.client_name || 'Client'}</p>{appointment.description && <small>{appointment.description}</small>}</div><div className="stem-card-actions"><button onClick={() => handleEditAppointment(appointment)} aria-label="Edit"><FaEdit /></button><button className="danger" onClick={() => handleDeleteAppointment(appointment.id)} aria-label="Delete"><FaTrash /></button></div></article>)}
-                    {dayBlocks.map((blocked) => <article className="stem-agenda-card block" key={`${blocked.date}-${blocked.timeSlot}`}><div className="stem-agenda-time">{formatTime(blocked.timeSlot.split('-').pop())}</div><div className="stem-agenda-copy"><span>BLOCKED</span><strong>{blocked.label || 'Unavailable'}</strong></div><div className="stem-card-actions"><button className="danger" onClick={() => handleDeleteBlockedTime(blocked)} aria-label="Delete"><FaTrash /></button></div></article>)}
+                    {dayBlocks.map((blocked) => <article className="stem-agenda-card block" key={`${blocked.date}-${blocked.timeSlot}`}><div className="stem-agenda-time">{blocked.timeSlot.endsWith('00:00') && Number(blocked.duration) === 24 ? 'All day' : formatTime(blocked.timeSlot.split('-').pop())}</div><div className="stem-agenda-copy"><span>BLOCKED</span><strong>{blocked.label || 'Unavailable'}</strong></div><div className="stem-card-actions"><button className="danger" onClick={() => handleDeleteBlockedTime(blocked)} aria-label="Delete"><FaTrash /></button></div></article>)}
                 </div>
             </section>
 
@@ -701,11 +703,21 @@ const safeEndTime = endTime ? String(endTime) : "";
                                 onClick={() => {
                                     setShowPlusOptionsModal(false);
                                     setShowBlockModal(true);
+                                    setBlockWholeDay(false);
                                     setBlockDate(selectedDate.toISOString().split('T')[0]);
                                 }}
                             >
                                 🚫 Block Time
                             </button>
+                            <button
+                                style={{ marginTop: '10px' }}
+                                onClick={() => {
+                                    setShowPlusOptionsModal(false);
+                                    setShowBlockModal(true);
+                                    setBlockWholeDay(true);
+                                    setBlockDate(selectedKey);
+                                }}
+                            >Block Day</button>
                             <button
                                 style={{ marginTop: '20px', color: 'gray' }}
                                 onClick={() => setShowPlusOptionsModal(false)}
@@ -719,20 +731,21 @@ const safeEndTime = endTime ? String(endTime) : "";
                 {showBlockModal && (
                     <div className="modal">
                         <div className="modal-content">
-                            <h3>Block Time Slot</h3>
+                            <h3>{blockWholeDay ? 'Block Entire Day' : 'Block Time Slot'}</h3>
                             <label>Select Date:</label>
                             <input type="date" value={blockDate} onChange={(e) => setBlockDate(e.target.value)} />
 
-                            <label>Start Time:</label>
+                            {!blockWholeDay && <><label>Start Time:</label>
                             <input type="time" value={blockStartTime} onChange={(e) => setBlockStartTime(e.target.value)} />
 
                             <label>Duration (Hours):</label>
-                            <input type="number" min="1" value={blockDuration} onChange={(e) => setBlockDuration(e.target.value)} />
+                            <input type="number" min="1" value={blockDuration} onChange={(e) => setBlockDuration(e.target.value)} /></>}
 
                             <label>Reason:</label>
                             <input type="text" value={blockLabel} onChange={(e) => setBlockLabel(e.target.value)} />
 
-                            <button onClick={handleBlockTime}>Block Time</button>
+                            {blockWholeDay && <p>This prevents new bookings for the selected date. Existing appointments stay on the schedule.</p>}
+                            <button onClick={handleBlockTime}>{blockWholeDay ? 'Block Day' : 'Block Time'}</button>
                             <button onClick={() => setShowBlockModal(false)}>Cancel</button>
                         </div>
                     </div>
