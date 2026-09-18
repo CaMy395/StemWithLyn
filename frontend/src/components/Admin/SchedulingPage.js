@@ -24,6 +24,23 @@ const appointmentProgram = (appointment, clients) => {
     return 'stem';
 };
 
+const appointmentWeeklyValue = (appointment, clients) => {
+    const program = appointmentProgram(appointment, clients);
+    if (program === 'stem') {
+        const listedPrice = appointmentTypes.find(type => type.title === appointment.title)?.price;
+        const amount = Number(listedPrice ?? appointment.price);
+        return Number.isFinite(amount) ? amount : 0;
+    }
+    const rate = program === 'club-z' ? 25 : program === 'above-beyond' ? 40 : 30;
+    const minutes = value => {
+        const [hours, mins] = String(value || '').split(':').map(Number);
+        return Number.isFinite(hours) && Number.isFinite(mins) ? hours * 60 + mins : null;
+    };
+    const start = minutes(appointment.time);
+    const end = minutes(appointment.end_time);
+    return start !== null && end !== null && end > start ? rate * (end - start) / 60 : 0;
+};
+
 const SchedulingPage = () => {
     const [appointments, setAppointments] = useState([]);
     const [selectedAppointmentIds, setSelectedAppointmentIds] = useState([]);
@@ -146,6 +163,18 @@ const SchedulingPage = () => {
     }, [apiUrl]); // ✅ `fetchBlockedTimes` is called inside, so it's safe
     
     
+    useEffect(() => {
+        const refreshAppointments = async () => {
+            try {
+                const response = await axios.get(`${apiUrl}/appointments`);
+                setAppointments(response.data.map(appointment => ({ ...appointment, date: toDateKey(appointment.date) })));
+            } catch (error) { console.error('Could not refresh schedule:', error); }
+        };
+        window.addEventListener('focus', refreshAppointments);
+        const timer = window.setInterval(refreshAppointments, 30000);
+        return () => { window.removeEventListener('focus', refreshAppointments); window.clearInterval(timer); };
+    }, [apiUrl]);
+
 const formatTime = (time) => {
   if (time == null) return "";
 
@@ -636,6 +665,17 @@ const safeEndTime = endTime ? String(endTime) : "";
     };
 
     const selectedKey = toDateKey(selectedDate);
+    const weekStart = new Date(selectedDate);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    const weekStartKey = toDateKey(weekStart);
+    const weekEndKey = toDateKey(weekEnd);
+    const weekAppointments = appointments.filter(appointment => {
+        const date = toDateKey(appointment.date);
+        return date >= weekStartKey && date <= weekEndKey;
+    });
+    const weeklyProfit = weekAppointments.reduce((sum, appointment) => sum + appointmentWeeklyValue(appointment, clients), 0);
     const dayAppointments = filters.appointments ? appointments.filter((item) => toDateKey(item.date) === selectedKey) : [];
     const dayBlocks = filters.blocks ? blockedTimes.filter((item) => toDateKey(item.date) === selectedKey) : [];
 
@@ -655,6 +695,7 @@ const safeEndTime = endTime ? String(endTime) : "";
                 </div>
                 <div className="stem-view-switch"><button className={isWeekView ? 'active' : ''} onClick={() => setIsWeekView(true)}><FaClock /> Week</button><button className={!isWeekView ? 'active' : ''} onClick={() => setIsWeekView(false)}><FaCalendarAlt /> Month</button></div>
             </div>
+            <div className="stem-weekly-profit"><div><span>WEEKLY SCHEDULED PROFIT</span><strong>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(weeklyProfit)}</strong></div><small>{weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · {weekAppointments.length} appointment{weekAppointments.length === 1 ? '' : 's'} · Updates when appointments are cancelled</small></div>
 
             <div className="stem-scheduler-filters">
                 <label className="appointments"><input type="checkbox" checked={filters.appointments} onChange={(e) => setFilters({ ...filters, appointments: e.target.checked })} /> Appointments <span>{appointments.length}</span></label>
