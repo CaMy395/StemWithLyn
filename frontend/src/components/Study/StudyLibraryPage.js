@@ -20,6 +20,7 @@ export default function StudyLibraryPage({ adminMode = false }) {
   const [materials, setMaterials] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [tab, setTab] = useState('notes');
+  const [selectedNoteId, setSelectedNoteId] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -27,7 +28,9 @@ export default function StudyLibraryPage({ adminMode = false }) {
   const [answers, setAnswers] = useState({});
   const [feedback, setFeedback] = useState({});
   const [materialForm, setMaterialForm] = useState({ title: '', description: '', subject: '', grade: '', kind: 'notes', file: null });
-  const [questionForm, setQuestionForm] = useState({ subject: '', grade: '', prompt: '', options: ['', '', '', ''], correctIndex: 0, explanation: '' });
+  const [questionForm, setQuestionForm] = useState({ materialId: '', subject: '', grade: '', prompt: '', options: ['', '', '', ''], correctIndex: 0, explanation: '' });
+  const notes = materials.filter(item => item.kind === 'notes');
+  const visibleQuestions = selectedNoteId ? questions.filter(question => String(question.material_id) === selectedNoteId) : questions;
 
   const load = useCallback(async () => {
     try {
@@ -48,7 +51,8 @@ export default function StudyLibraryPage({ adminMode = false }) {
     for (const key of ['title', 'description', 'subject', 'grade', 'kind']) body.append(key, materialForm[key]);
     body.append('file', materialForm.file);
     try {
-      await request('/materials', { method: 'POST', body });
+      const saved = await request('/materials', { method: 'POST', body });
+      if (saved.kind === 'notes') setQuestionForm(current => ({ ...current, materialId: String(saved.id) }));
       setMaterialForm({ title: '', description: '', subject: '', grade: '', kind: 'notes', file: null });
       event.target.reset();
       setMessage('Material added to the student library.');
@@ -61,7 +65,7 @@ export default function StudyLibraryPage({ adminMode = false }) {
     const options = questionForm.options.map(value => value.trim()).filter(Boolean);
     try {
       await request('/questions', { method: 'POST', body: JSON.stringify({ ...questionForm, options, correctIndex: Number(questionForm.correctIndex) }) });
-      setQuestionForm({ subject: '', grade: '', prompt: '', options: ['', '', '', ''], correctIndex: 0, explanation: '' });
+      setQuestionForm({ materialId: questionForm.materialId, subject: '', grade: '', prompt: '', options: ['', '', '', ''], correctIndex: 0, explanation: '' });
       setMessage('Practice question added.');
       await load();
     } catch (err) { setError(err.message); } finally { setBusy(false); }
@@ -92,6 +96,15 @@ export default function StudyLibraryPage({ adminMode = false }) {
     catch (err) { setError(err.message); }
   };
 
+  const linkQuestion = async (id, materialId) => {
+    if (!materialId) return;
+    try {
+      await request(`/questions/${id}/note`, { method: 'PATCH', body: JSON.stringify({ materialId: Number(materialId) }) });
+      setMessage('Question linked to note.');
+      await load();
+    } catch (err) { setError(err.message); }
+  };
+
   return <main className="study-page">
     <header className="study-hero"><span>STEM WITH LYN</span><h1>Study library</h1><p>{adminMode ? 'Share notes and worked examples, then add a few practice questions.' : 'Review your notes, explore examples, and try a practice question.'}</p></header>
     {error && <p className="study-alert" role="alert">{error}</p>}
@@ -106,16 +119,46 @@ export default function StudyLibraryPage({ adminMode = false }) {
         <button disabled={busy}>Upload to library</button>
       </form>
       <form className="study-panel" onSubmit={addQuestion}><h2>Add a practice question</h2><p>Students choose an answer and see your explanation.</p>
+        <label>Linked note<select required value={questionForm.materialId} onChange={e => setQuestionForm({ ...questionForm, materialId: e.target.value })}><option value="">Choose a note</option>{notes.map(note => <option key={note.id} value={note.id}>{note.title}</option>)}</select></label>
+        {notes.length === 0 && <p>Upload a note first to add its practice questions.</p>}
         <div className="study-fields"><label>Subject<input maxLength="80" value={questionForm.subject} onChange={e => setQuestionForm({ ...questionForm, subject: e.target.value })} /></label><label>Grade or level<input maxLength="40" value={questionForm.grade} onChange={e => setQuestionForm({ ...questionForm, grade: e.target.value })} /></label></div>
         <label>Question<textarea required maxLength="1000" value={questionForm.prompt} onChange={e => setQuestionForm({ ...questionForm, prompt: e.target.value })} /></label>
         {questionForm.options.map((value, index) => <label key={index}>Choice {index + 1}{index < 2 ? ' (required)' : ''}<input required={index < 2} maxLength="300" value={value} onChange={e => { const options = [...questionForm.options]; options[index] = e.target.value; setQuestionForm({ ...questionForm, options }); }} /></label>)}
         <label>Correct choice<select value={questionForm.correctIndex} onChange={e => setQuestionForm({ ...questionForm, correctIndex: Number(e.target.value) })}>{questionForm.options.map((_, index) => <option key={index} value={index}>Choice {index + 1}</option>)}</select></label>
         <label>Explanation<textarea maxLength="1000" value={questionForm.explanation} onChange={e => setQuestionForm({ ...questionForm, explanation: e.target.value })} /></label>
-        <button disabled={busy}>Add question</button>
+        <button disabled={busy || notes.length === 0}>Add question</button>
       </form>
     </section>}
-    <div className="study-tabs" role="tablist"><button className={tab === 'notes' ? 'active' : ''} onClick={() => setTab('notes')}>Notes ({materials.filter(m => m.kind === 'notes').length})</button><button className={tab === 'examples' ? 'active' : ''} onClick={() => setTab('examples')}>Worked examples ({materials.filter(m => m.kind === 'examples').length})</button><button className={tab === 'practice' ? 'active' : ''} onClick={() => setTab('practice')}>Practice ({questions.length})</button></div>
-    {tab !== 'practice' ? <section className="study-list">{materials.filter(m => m.kind === tab).length === 0 && <p className="study-empty">No {tab === 'notes' ? 'notes' : 'worked examples'} have been added yet.</p>}{materials.filter(m => m.kind === tab).map(item => <article className="study-card" key={item.id}><div><span className="study-meta">{[item.subject, item.grade].filter(Boolean).join(' · ') || 'STEM'}</span><h2>{item.title}</h2>{item.description && <p>{item.description}</p>}<small>{item.file_name}</small></div><div className="study-actions"><button onClick={() => openMaterial(item)}>Open material</button>{adminMode && <button className="study-danger" onClick={() => remove('materials', item.id)}>Delete</button>}</div></article>)}</section> : <section className="study-list">{questions.length === 0 && <p className="study-empty">Practice questions will appear here when added.</p>}{questions.map(question => <article className="study-card study-question" key={question.id}><span className="study-meta">{[question.subject, question.grade].filter(Boolean).join(' · ') || 'STEM'}</span><h2>{question.prompt}</h2><div className="study-options">{question.options.map((option, index) => <label key={index}><input type="radio" name={`question-${question.id}`} checked={answers[question.id] === index} onChange={() => { setAnswers({ ...answers, [question.id]: index }); setFeedback(current => ({ ...current, [question.id]: null })); }} />{option}</label>)}</div>{adminMode ? <div><p className="study-answer">Correct: {question.options[question.correct_index]}</p>{question.explanation && <p>{question.explanation}</p>}<button className="study-danger" onClick={() => remove('questions', question.id)}>Delete</button></div> : <div><button disabled={answers[question.id] === undefined} onClick={() => check(question.id)}>Check answer</button>{feedback[question.id] && <p className={feedback[question.id].correct ? 'study-success' : 'study-alert'} role="status">{feedback[question.id].correct ? 'Correct!' : `Try again. The answer is: ${question.options[feedback[question.id].correctIndex]}`}{feedback[question.id].explanation && ` ${feedback[question.id].explanation}`}</p>}</div>}</article>)}</section>}
+    <div className="study-tabs" role="tablist"><button className={tab === 'notes' ? 'active' : ''} onClick={() => setTab('notes')}>Notes ({notes.length})</button><button className={tab === 'examples' ? 'active' : ''} onClick={() => setTab('examples')}>Worked examples ({materials.filter(m => m.kind === 'examples').length})</button><button className={tab === 'practice' ? 'active' : ''} onClick={() => setTab('practice')}>Practice ({questions.length})</button></div>
+    {tab !== 'practice' ? <section className="study-list">
+      {materials.filter(item => item.kind === tab).length === 0 && <p className="study-empty">No {tab === 'notes' ? 'notes' : 'worked examples'} have been added yet.</p>}
+      {materials.filter(item => item.kind === tab).map(item => {
+        const count = questions.filter(question => String(question.material_id) === String(item.id)).length;
+        return <article className="study-card" key={item.id}>
+          <div><span className="study-meta">{[item.subject, item.grade].filter(Boolean).join(' · ') || 'STEM'}</span><h2>{item.title}</h2>{item.description && <p>{item.description}</p>}<small>{item.file_name}</small></div>
+          <div className="study-actions"><button onClick={() => openMaterial(item)}>Open material</button>
+            {item.kind === 'notes' && <button onClick={() => { setSelectedNoteId(String(item.id)); setTab('practice'); }}>Practice ({count})</button>}
+            {adminMode && <button className="study-danger" onClick={() => remove('materials', item.id)}>Delete</button>}
+          </div>
+        </article>;
+      })}
+    </section> : <section className="study-list">
+      <label className="study-note-filter">Questions for note<select value={selectedNoteId} onChange={event => setSelectedNoteId(event.target.value)}><option value="">All notes</option>{notes.map(note => <option key={note.id} value={note.id}>{note.title}</option>)}</select></label>
+      {visibleQuestions.length === 0 && <p className="study-empty">No practice questions for this note yet.</p>}
+      {visibleQuestions.map(question => <article className="study-card study-question" key={question.id}>
+        <span className="study-meta">{[question.subject, question.grade].filter(Boolean).join(' · ') || 'STEM'} · {question.material_title || 'Unlinked question'}</span>
+        <h2>{question.prompt}</h2>
+        <div className="study-options">{question.options.map((option, index) => <label key={index}><input type="radio" name={`question-${question.id}`} checked={answers[question.id] === index} onChange={() => { setAnswers({ ...answers, [question.id]: index }); setFeedback(current => ({ ...current, [question.id]: null })); }} />{option}</label>)}</div>
+        {adminMode ? <div>
+          <label className="study-note-filter">Linked note<select value={question.material_id || ''} onChange={event => linkQuestion(question.id, event.target.value)}><option value="">Choose a note</option>{notes.map(note => <option key={note.id} value={note.id}>{note.title}</option>)}</select></label>
+          <p className="study-answer">Correct: {question.options[question.correct_index]}</p>{question.explanation && <p>{question.explanation}</p>}
+          <button className="study-danger" onClick={() => remove('questions', question.id)}>Delete</button>
+        </div> : <div>
+          <button disabled={answers[question.id] === undefined} onClick={() => check(question.id)}>Check answer</button>
+          {feedback[question.id] && <p className={feedback[question.id].correct ? 'study-success' : 'study-alert'} role="status">{feedback[question.id].correct ? 'Correct!' : `Try again. The answer is: ${question.options[feedback[question.id].correctIndex]}`}{feedback[question.id].explanation && ` ${feedback[question.id].explanation}`}</p>}
+        </div>}
+      </article>)}
+    </section>}
     {preview && <div className="study-modal" role="dialog" aria-modal="true" aria-label={preview.title}><div className="study-modal-content"><div className="study-modal-header"><h2>{preview.title}</h2><button onClick={() => setPreview(null)} aria-label="Close material">×</button></div>{preview.mime === 'application/pdf' ? <iframe title={preview.title} src={preview.url} /> : <img src={preview.url} alt={preview.title} />}</div></div>}
   </main>;
 }

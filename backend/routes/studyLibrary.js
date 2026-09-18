@@ -27,6 +27,8 @@ export default function createStudyLibraryRouter(pool, tokenSecret) {
         prompt text NOT NULL, options jsonb NOT NULL, correct_index integer NOT NULL,
         explanation text NOT NULL DEFAULT '', created_at timestamptz NOT NULL DEFAULT now()
       )`);
+      await pool.query(`ALTER TABLE study_questions ADD COLUMN IF NOT EXISTS material_id bigint
+        REFERENCES study_materials(id) ON DELETE SET NULL`);
     })().catch((error) => { schemaPromise = null; throw error; });
     return schemaPromise;
   };
@@ -109,27 +111,43 @@ export default function createStudyLibraryRouter(pool, tokenSecret) {
   router.get('/questions', async (req, res) => {
     try {
       const columns = req.studyUser.role === 'admin'
-        ? 'id, subject, grade, prompt, options, correct_index, explanation, created_at'
-        : 'id, subject, grade, prompt, options, created_at';
-      const result = await pool.query(`SELECT ${columns} FROM study_questions ORDER BY created_at DESC, id DESC`);
+        ? 'q.id, q.subject, q.grade, q.prompt, q.options, q.correct_index, q.explanation, q.created_at, q.material_id, m.title AS material_title'
+        : 'q.id, q.subject, q.grade, q.prompt, q.options, q.created_at, q.material_id, m.title AS material_title';
+      const result = await pool.query(`SELECT ${columns} FROM study_questions q
+        LEFT JOIN study_materials m ON m.id = q.material_id ORDER BY q.created_at DESC, q.id DESC`);
       return res.json(result.rows);
     } catch (error) { console.error('Study questions list failed:', error); return res.status(500).json({ error: 'Could not load questions.' }); }
   });
 
   router.post('/questions', requireAdmin, async (req, res) => {
-    const { subject = '', grade = '', prompt, options, correctIndex, explanation = '' } = req.body || {};
+    const { subject = '', grade = '', prompt, options, correctIndex, explanation = '', materialId } = req.body || {};
+    const noteId = Number(materialId);
     if (!prompt?.trim() || prompt.length > 1000 || !Array.isArray(options) || options.length < 2 || options.length > 4 ||
         options.some((option) => typeof option !== 'string' || !option.trim() || option.length > 300) ||
         !Number.isInteger(correctIndex) || correctIndex < 0 || correctIndex >= options.length ||
-        subject.length > 80 || grade.length > 40 || explanation.length > 1000) {
-      return res.status(400).json({ error: 'Enter a question, 2–4 choices, the correct choice, and valid details.' });
+        subject.length > 80 || grade.length > 40 || explanation.length > 1000 || !Number.isSafeInteger(noteId) || noteId < 1) {
+      return res.status(400).json({ error: 'Choose a note, enter a question, 2–4 choices, and the correct choice.' });
     }
     try {
-      const result = await pool.query(`INSERT INTO study_questions (subject, grade, prompt, options, correct_index, explanation)
-        VALUES ($1,$2,$3,$4::jsonb,$5,$6) RETURNING *`,
-        [subject.trim(), grade.trim(), prompt.trim(), JSON.stringify(options.map((value) => value.trim())), correctIndex, explanation.trim()]);
+      const note = await pool.query(`SELECT id FROM study_materials WHERE id = $1 AND kind = 'notes'`, [noteId]);
+      if (!note.rowCount) return res.status(400).json({ error: 'Choose a note from the library.' });
+      const result = await pool.query(`INSERT INTO study_questions (subject, grade, prompt, options, correct_index, explanation, material_id)
+        VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7) RETURNING *`,
+        [subject.trim(), grade.trim(), prompt.trim(), JSON.stringify(options.map((value) => value.trim())), correctIndex, explanation.trim(), noteId]);
       return res.status(201).json(result.rows[0]);
     } catch (error) { console.error('Study question create failed:', error); return res.status(500).json({ error: 'Could not save question.' }); }
+  });
+
+  router.patch('/questions/:id/note', requireAdmin, async (req, res) => {
+    const noteId = Number(req.body?.materialId);
+    if (!Number.isSafeInteger(noteId) || noteId < 1) return res.status(400).json({ error: 'Choose a note.' });
+    try {
+      const note = await pool.query(`SELECT id FROM study_materials WHERE id = $1 AND kind = 'notes'`, [noteId]);
+      if (!note.rowCount) return res.status(400).json({ error: 'Choose a note from the library.' });
+      const result = await pool.query('UPDATE study_questions SET material_id = $1 WHERE id = $2 RETURNING id, material_id', [noteId, req.params.id]);
+      if (!result.rowCount) return res.status(404).json({ error: 'Question not found.' });
+      return res.json(result.rows[0]);
+    } catch (error) { console.error('Study question link failed:', error); return res.status(500).json({ error: 'Could not link question.' }); }
   });
 
   router.post('/questions/:id/check', async (req, res) => {
