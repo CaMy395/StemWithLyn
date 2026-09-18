@@ -15,6 +15,7 @@ const Profits = () => {
   const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3001';
   const now = useMemo(() => new Date(), []);
   const [transactions, setTransactions] = useState([]);
+  const [appointmentEarnings, setAppointmentEarnings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [query, setQuery] = useState('');
@@ -38,6 +39,12 @@ const Profits = () => {
     finally { setLoading(false); }
   }, [apiUrl]);
   useEffect(() => { fetchTransactions(); }, [fetchTransactions]);
+  useEffect(() => {
+    fetch(`${apiUrl}/api/appointment-earnings`, { headers: { Authorization: `Bearer ${localStorage.getItem('portalToken') || ''}` } })
+      .then(async response => { if (!response.ok) throw new Error('Could not load appointment pay.'); return response.json(); })
+      .then(setAppointmentEarnings)
+      .catch(error => setMessage({ type: 'error', text: error.message }));
+  }, [apiUrl]);
 
   const filtered = useMemo(() => transactions.filter((row) => {
     const rowKind = transactionKind(row);
@@ -57,6 +64,11 @@ const Profits = () => {
     return sum;
   }, { income: 0, expenses: 0, net: 0 }), [filtered]);
   const margin = totals.income ? (totals.net / totals.income) * 100 : 0;
+  const visibleEarnings = appointmentEarnings.filter(row => {
+    const date = String(row.date || '').slice(0, 10);
+    return (!startDate || date >= startDate) && (!endDate || date <= endDate);
+  });
+  const expectedPartnerPay = visibleEarnings.reduce((sum, row) => sum + Number(row.estimated_pay || 0), 0);
 
   const openForm = (row = null) => { setEditing(row); setForm(row ? { category: row.category || '', description: row.description || '', amount: Math.abs(parseAmount(row.amount)), type: row.type || transactionKind(row) } : emptyForm); setShowForm(true); setMessage({ type: '', text: '' }); };
   const saveTransaction = async (event) => {
@@ -105,6 +117,8 @@ const Profits = () => {
   return <main className="finance-workspace">
     <header className="finance-header"><div><span className="finance-kicker">ADMIN WORKSPACE</span><h1>Profit & loss</h1><p>Track income, expenses, and net performance.</p></div><div><button className="finance-primary" onClick={() => recordSquarePayment()} disabled={saving}>Import Square payment</button> <button className="finance-primary" onClick={() => openForm()}><FaPlus /> Add transaction</button></div></header>
     <section className="finance-stats"><article className="income"><span><FaArrowUp /></span><div><small>INCOME</small><strong>{money.format(totals.income)}</strong><em>{filtered.filter((row) => transactionKind(row) === 'income').length} transactions</em></div></article><article className="expense"><span><FaArrowDown /></span><div><small>EXPENSES</small><strong>{money.format(totals.expenses)}</strong><em>{filtered.filter((row) => transactionKind(row) === 'expense').length} transactions</em></div></article><article className={totals.net < 0 ? 'net negative' : 'net'}><span><FaWallet /></span><div><small>NET PROFIT</small><strong>{money.format(totals.net)}</strong><em>{margin.toFixed(1)}% margin</em></div></article></section>
+    <section className="finance-partner-pay"><div><h2>Partner appointment pay</h2><p>Based on scheduled session length: Club Z $25/hour, Above &amp; Beyond $40/hour, United Mentors and BWLA $30/hour. These estimates are separate from recorded payments and net profit.</p></div><strong>{money.format(expectedPartnerPay)}</strong></section>
+    {visibleEarnings.length > 0 && <section className="finance-partner-list"><table><thead><tr><th>Date</th><th>Student</th><th>Program</th><th>Appointment</th><th>Estimated pay</th></tr></thead><tbody>{visibleEarnings.map(row => <tr key={row.id}><td>{String(row.date).slice(0, 10)}</td><td>{row.client_name}</td><td>{row.client_category}</td><td>{row.title}<small>{String(row.time || '').slice(0, 5)}–{String(row.end_time || '').slice(0, 5)}</small></td><td>{row.estimated_pay == null ? 'Add an end time' : money.format(Number(row.estimated_pay))}</td></tr>)}</tbody></table></section>}
     {message.text && <div className={`finance-notice ${message.type}`}><span>{message.text}</span><button onClick={() => setMessage({ type: '', text: '' })}><FaTimes /></button></div>}
     <section className="finance-panel"><div className="finance-tools"><label className="finance-search"><FaSearch /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search category, description, or type…" /></label><select value={kind} onChange={(event) => setKind(event.target.value)}><option value="all">All activity</option><option value="income">Income only</option><option value="expense">Expenses only</option></select><label className="finance-date"><span>From</span><input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label><label className="finance-date"><span>To</span><input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label><button className="finance-clear" onClick={() => { setQuery(''); setKind('all'); setStartDate(''); setEndDate(''); }}>Show all</button></div>
       <div className="finance-table-label"><div><FaChartLine /><strong>Financial activity</strong><span>{filtered.length} records</span></div><small>{startDate || endDate ? `${startDate || 'Beginning'} – ${endDate || 'Today'}` : 'All dates'}</small></div>

@@ -14,6 +14,16 @@ const toDateKey = (value) => {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
 
+const appointmentProgram = (appointment, clients) => {
+    const category = appointment.client_category || clients.find(client => Number(client.id) === Number(appointment.client_id))?.category || '';
+    const value = category.toLowerCase();
+    if (value.includes('bwla')) return 'bwla';
+    if (value.includes('united mentor')) return 'united-mentors';
+    if (value.includes('above') && value.includes('beyond')) return 'above-beyond';
+    if (value.includes('club z')) return 'club-z';
+    return 'stem';
+};
+
 const SchedulingPage = () => {
     const [appointments, setAppointments] = useState([]);
     const [selectedAppointmentIds, setSelectedAppointmentIds] = useState([]);
@@ -581,7 +591,7 @@ const safeEndTime = endTime ? String(endTime) : "";
                                                     return (
                                                         <div
                                                             key={appointment.id}
-                                                            className={`event appointment ${index > 0 ? 'overlapping' : ''}`}
+                                                            className={`event appointment program-${appointmentProgram(appointment, clients)} ${index > 0 ? 'overlapping' : ''}`}
                                                             draggable
                                                             onDragStart={(e) => {
                                                                 e.dataTransfer.setData('appointmentId', appointment.id);
@@ -650,6 +660,7 @@ const safeEndTime = endTime ? String(endTime) : "";
                 <label className="appointments"><input type="checkbox" checked={filters.appointments} onChange={(e) => setFilters({ ...filters, appointments: e.target.checked })} /> Appointments <span>{appointments.length}</span></label>
                 <label className="blocks"><input type="checkbox" checked={filters.blocks} onChange={(e) => setFilters({ ...filters, blocks: e.target.checked })} /> Blocked time <span>{blockedTimes.length}</span></label>
             </div>
+            <div className="stem-program-legend"><span className="program-stem">STEM with Lyn</span><span className="program-bwla">BWLA</span><span className="program-united-mentors">United Mentors</span><span className="program-above-beyond">Above &amp; Beyond</span><span className="program-club-z">Club Z</span><span className="program-blocked">Blocked</span></div>
 
             <div className="stem-scheduler-filters">
                 <button type="button" onClick={() => setSelectedAppointmentIds(dayAppointments.map((appt) => appt.id))}>Select all on this day</button>
@@ -668,7 +679,7 @@ const safeEndTime = endTime ? String(endTime) : "";
                 <div className="stem-agenda-heading"><div><span>SELECTED DAY</span><h2>{selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</h2></div><button onClick={() => { setEditingAppointment(null); setNewAppointment({ title: '', client: '', date: selectedKey, time: '', endTime: '', description: '', recurrence: '', occurrences: 1, weekdays: [] }); setShowAppointmentModal(true); }}><FaPlus /> Appointment</button></div>
                 {dayAppointments.length === 0 && dayBlocks.length === 0 && <div className="stem-empty-agenda"><FaCalendarAlt /><strong>Nothing scheduled</strong><span>This day is open. Add an appointment or block off time.</span></div>}
                 <div className="stem-agenda-grid">
-                    {dayAppointments.map((appointment) => <article className="stem-agenda-card appointment" key={appointment.id}><label aria-label={`Select ${appointment.title}`}><input type="checkbox" checked={selectedAppointmentIds.includes(appointment.id)} onChange={(e) => setSelectedAppointmentIds((prev) => e.target.checked ? [...prev, appointment.id] : prev.filter((id) => id !== appointment.id))} /></label><div className="stem-agenda-time">{formatTime(appointment.time)}<small>{formatTime(appointment.end_time)}</small></div><div className="stem-agenda-copy"><span>APPOINTMENT</span><strong>{appointment.title}</strong><p>{clients.find((client) => Number(client.id) === Number(appointment.client_id))?.full_name || appointment.client_name || 'Client'}</p>{appointment.description && <small>{appointment.description}</small>}</div><div className="stem-card-actions"><button onClick={() => handleEditAppointment(appointment)} aria-label="Edit"><FaEdit /></button><button className="danger" onClick={() => handleDeleteAppointment(appointment.id)} aria-label="Delete"><FaTrash /></button></div></article>)}
+                    {dayAppointments.map((appointment) => <article className={`stem-agenda-card appointment program-${appointmentProgram(appointment, clients)}`} key={appointment.id}><label aria-label={`Select ${appointment.title}`}><input type="checkbox" checked={selectedAppointmentIds.includes(appointment.id)} onChange={(e) => setSelectedAppointmentIds((prev) => e.target.checked ? [...prev, appointment.id] : prev.filter((id) => id !== appointment.id))} /></label><div className="stem-agenda-time">{formatTime(appointment.time)}<small>{formatTime(appointment.end_time)}</small></div><div className="stem-agenda-copy"><span>APPOINTMENT</span><strong>{appointment.title}</strong><p>{clients.find((client) => Number(client.id) === Number(appointment.client_id))?.full_name || appointment.client_name || 'Client'}</p>{appointment.description && <small>{appointment.description}</small>}</div><div className="stem-card-actions"><button onClick={() => handleEditAppointment(appointment)} aria-label="Edit"><FaEdit /></button><button className="danger" onClick={() => handleDeleteAppointment(appointment.id)} aria-label="Delete"><FaTrash /></button></div></article>)}
                     {dayBlocks.map((blocked) => <article className="stem-agenda-card block" key={`${blocked.date}-${blocked.timeSlot}`}><div className="stem-agenda-time">{blocked.timeSlot.endsWith('00:00') && Number(blocked.duration) === 24 ? 'All day' : formatTime(blocked.timeSlot.split('-').pop())}</div><div className="stem-agenda-copy"><span>BLOCKED</span><strong>{blocked.label || 'Unavailable'}</strong></div><div className="stem-card-actions"><button className="danger" onClick={() => handleDeleteBlockedTime(blocked)} aria-label="Delete"><FaTrash /></button></div></article>)}
                 </div>
             </section>

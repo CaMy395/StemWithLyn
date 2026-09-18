@@ -3109,45 +3109,51 @@ app.get('/api/profits', async (req, res) => {
 
 // Helper: Calculate the correct profit amount
 function determineProfitAmount(appointment, clientCategory) {
-    const thirdPartyRates = {
-      "Above & Beyond Learning": {
-        virtual: 35,
-        inPerson: 40
-      },
-      "Club Z": {
-        virtual: 25,
-        inPerson: 28
-      },
-      "United Mentors": {
-        virtual: 30,
-        inPerson: 35
-      },
-    };
-  
-    // If StemwithLyn or no category, parse from title
-    if (!clientCategory || clientCategory === 'StemwithLyn') {
-      const match = appointment.title.match(/\$(\d+(\.\d{1,2})?)/);
-      return match ? parseFloat(match[1]) : 0;
+  const category = String(clientCategory || '').toLowerCase();
+  const rate = category.includes('club z') ? 25
+    : category.includes('above') && category.includes('beyond') ? 40
+    : category.includes('united mentor') || category.includes('bwla') ? 30 : null;
+  if (rate === null) {
+    if (!category || category.includes('stemwithlyn') || category.includes('stem with lyn')) {
+      const match = String(appointment.title || '').match(/\$(\d+(?:\.\d{1,2})?)/);
+      return match ? Number(match[1]) : null;
     }
-  
-    // Third Party handling
-    const rates = thirdPartyRates[clientCategory];
-    if (!rates) return 0;
-  
-    const lowerTitle = appointment.title.toLowerCase();
-    if (lowerTitle.includes('in-person')) {
-      return rates.inPerson;
-    } else {
-      return rates.virtual;
-    }
+    return null;
   }
+  const start = timeToMinutes(String(appointment.time || '').slice(0, 5));
+  const end = timeToMinutes(String(appointment.end_time || '').slice(0, 5));
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+  return Math.round(rate * (end - start) / 60 * 100) / 100;
+  }
+
+app.get('/api/appointment-earnings', async (req, res) => {
+  try {
+    const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const payload = jwt.verify(token, portalTokenSecret);
+    const user = await pool.query('SELECT role FROM users WHERE id = $1 LIMIT 1', [payload.userId]);
+    if (user.rows[0]?.role !== 'admin') return res.status(403).json({ error: 'Admin account required.' });
+    const result = await pool.query(`SELECT a.id, a.title, a.date, a.time, a.end_time,
+      c.full_name AS client_name, c.category AS client_category
+      FROM appointments a JOIN clients c ON c.id = a.client_id
+      WHERE c.category ILIKE ANY(ARRAY['%club z%', '%above%beyond%', '%united mentor%', '%bwla%'])
+      ORDER BY a.date DESC, a.time DESC`);
+    return res.json(result.rows.map((appointment) => ({
+      ...appointment,
+      estimated_pay: determineProfitAmount(appointment, appointment.client_category),
+    })));
+  } catch (error) {
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') return res.status(401).json({ error: 'Please sign in again.' });
+    console.error('Appointment earnings failed:', error);
+    return res.status(500).json({ error: 'Could not load appointment earnings.' });
+  }
+});
   
 // Update profits for already paid appointments
 app.post('/api/update-profits-for-old-payments', async (req, res) => {
     try {
       // Fetch all paid appointments and join with client categories
       const appointmentsResult = await pool.query(`
-        SELECT a.id, a.title, a.price, c.category
+        SELECT a.id, a.title, a.price, a.time, a.end_time, c.category
         FROM appointments a
         JOIN clients c ON a.client_id = c.id
         WHERE a.paid = true
@@ -3160,6 +3166,7 @@ app.post('/api/update-profits-for-old-payments', async (req, res) => {
   
       for (const appt of appointmentsResult.rows) {
         const calculatedAmount = determineProfitAmount(appt, appt.category);
+        if (calculatedAmount === null) continue;
   
         const isThirdParty = appt.category && appt.category !== 'StemwithLyn';
   
