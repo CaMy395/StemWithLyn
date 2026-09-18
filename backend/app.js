@@ -1375,6 +1375,31 @@ app.delete('/tasks/:id', async (req, res) => {
 
 // Save blocked times to the database
 app.post("/api/schedule/block", async (req, res) => {
+    if (Array.isArray(req.body?.blockedTimes) && req.body.blockedTimes.length > 0) {
+        const entries = req.body.blockedTimes;
+        if (entries.length > 31 || entries.some(entry => !entry || !/^\d{4}-\d{2}-\d{2}$/.test(entry.date) ||
+            typeof entry.timeSlot !== 'string' || !entry.timeSlot.startsWith(`${entry.date}-`) ||
+            !/^\d{4}-\d{2}-\d{2}-\d{2}:\d{2}$/.test(entry.timeSlot) ||
+            typeof entry.label !== 'string' || !entry.label.trim() || entry.label.length > 200)) {
+            return res.status(400).json({ success: false, error: 'Choose a valid range of up to 31 days.' });
+        }
+        let db;
+        try {
+            db = await pool.connect();
+            await db.query('BEGIN');
+            for (const entry of entries) {
+                await db.query(`INSERT INTO schedule_blocks (time_slot, label, date) VALUES ($1,$2,$3)
+                    ON CONFLICT ON CONSTRAINT unique_block_time DO UPDATE SET label = EXCLUDED.label`,
+                    [entry.timeSlot, entry.label.trim(), entry.date]);
+            }
+            await db.query('COMMIT');
+            return res.json({ success: true, blockedTimes: entries });
+        } catch (error) {
+            if (db) await db.query('ROLLBACK');
+            console.error('Block range failed:', error);
+            return res.status(500).json({ success: false, error: 'Could not save blocked dates.' });
+        } finally { db?.release(); }
+    }
     try {
         const { blockedTimes } = req.body;
 

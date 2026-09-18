@@ -51,10 +51,12 @@ const SchedulingPage = () => {
     const [showBlockModal, setShowBlockModal] = useState(false);
     const [showAppointmentModal, setShowAppointmentModal] = useState(false);
     const [blockDate, setBlockDate] = useState('');
+    const [blockEndDate, setBlockEndDate] = useState('');
     const [blockStartTime, setBlockStartTime] = useState('');
-    const [blockDuration, setBlockDuration] = useState(1);
+    const [blockEndTime, setBlockEndTime] = useState('');
     const [blockWholeDay, setBlockWholeDay] = useState(false);
     const [blockLabel, setBlockLabel] = useState('');
+    const [savingBlock, setSavingBlock] = useState(false);
     const [holidays, setHolidays] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [status, setStatus] = useState({ type: '', message: '' });
@@ -326,43 +328,48 @@ const safeEndTime = endTime ? String(endTime) : "";
       };     
     
     const handleBlockTime = async () => {
-        if (!blockDate || (!blockWholeDay && (!blockStartTime || !blockDuration)) || !blockLabel.trim()) {
-            alert("⚠️ Please fill in all fields.");
+        if (!blockDate || !blockEndDate || !blockLabel.trim() || (!blockWholeDay && (!blockStartTime || !blockEndTime))) {
+            setStatus({ type: 'error', message: 'Complete the dates, reason, and time range.' });
             return;
         }
-    
+        const startDate = new Date(`${blockDate}T00:00:00Z`);
+        const endDate = new Date(`${blockEndDate}T00:00:00Z`);
+        const dayCount = Math.round((endDate - startDate) / 86400000) + 1;
+        if (!Number.isFinite(dayCount) || dayCount < 1 || dayCount > 31) {
+            setStatus({ type: 'error', message: 'Choose a date range of 1 to 31 days.' });
+            return;
+        }
         const startTime = blockWholeDay ? '00:00' : blockStartTime;
-        const duration = blockWholeDay ? 24 : Number(blockDuration);
-        
-        const blockedTimeEntry = {
-            timeSlot: `${blockDate}-${startTime}`, // Store only the start time
-            label: `${blockLabel.trim()} (${duration} hours)`, // Store duration in label
-            date: blockDate,
-            duration,
-        };
-    
+        const toMinutes = value => { const [h, m] = value.split(':').map(Number); return h * 60 + m; };
+        const duration = blockWholeDay ? 24 : (toMinutes(blockEndTime) - toMinutes(startTime)) / 60;
+        if (!Number.isFinite(duration) || duration <= 0 || duration > 24) {
+            setStatus({ type: 'error', message: 'End time must be after start time.' });
+            return;
+        }
+        const blockedEntries = Array.from({ length: dayCount }, (_, index) => {
+            const date = new Date(startDate);
+            date.setUTCDate(date.getUTCDate() + index);
+            const dateKey = date.toISOString().slice(0, 10);
+            return { timeSlot: `${dateKey}-${startTime}`, label: `${blockLabel.trim()} (${duration} hours)`, date: dateKey, duration };
+        });
+        setSavingBlock(true);
         try {
-            const response = await axios.post(`${apiUrl}/api/schedule/block`, { blockedTimes: [blockedTimeEntry] });
-    
+            const response = await axios.post(`${apiUrl}/api/schedule/block`, { blockedTimes: blockedEntries });
             if (response.data.success) {
-                console.log("✅ Blocked time successfully posted:", response.data);
-                setBlockedTimes(prev => [
-                    ...prev.filter(bt => !(bt.date === blockDate && bt.timeSlot === blockedTimeEntry.timeSlot)),
-                    blockedTimeEntry
-                ]);
-            } else {
-                console.error("❌ Failed to post blocked time:", response.data);
+                const changed = new Set(blockedEntries.map(entry => `${entry.date}:${entry.timeSlot}`));
+                setBlockedTimes(prev => [...prev.filter(entry => !changed.has(`${entry.date}:${entry.timeSlot}`)), ...blockedEntries]);
+                setStatus({ type: 'success', message: `${dayCount} day${dayCount === 1 ? '' : 's'} blocked.` });
             }
-    
             setShowBlockModal(false);
             setBlockDate('');
+            setBlockEndDate('');
             setBlockStartTime('');
-            setBlockDuration(1);
+            setBlockEndTime('');
             setBlockWholeDay(false);
             setBlockLabel('');
         } catch (error) {
-            console.error("❌ Error posting blocked time:", error);
-        }
+            setStatus({ type: 'error', message: error?.response?.data?.error || 'Could not save blocked dates.' });
+        } finally { setSavingBlock(false); }
     };
     
     const handleEditAppointment = (appointment) => {
@@ -717,7 +724,7 @@ const safeEndTime = endTime ? String(endTime) : "";
             </div>
 
             <section className="stem-day-agenda">
-                <div className="stem-agenda-heading"><div><span>SELECTED DAY</span><h2>{selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</h2></div><button onClick={() => { setEditingAppointment(null); setNewAppointment({ title: '', client: '', date: selectedKey, time: '', endTime: '', description: '', recurrence: '', occurrences: 1, weekdays: [] }); setShowAppointmentModal(true); }}><FaPlus /> Appointment</button></div>
+                <div className="stem-agenda-heading"><div><span>SELECTED DAY</span><h2>{selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</h2></div></div>
                 {dayAppointments.length === 0 && dayBlocks.length === 0 && <div className="stem-empty-agenda"><FaCalendarAlt /><strong>Nothing scheduled</strong><span>This day is open. Add an appointment or block off time.</span></div>}
                 <div className="stem-agenda-grid">
                     {dayAppointments.map((appointment) => <article className={`stem-agenda-card appointment program-${appointmentProgram(appointment, clients)}`} key={appointment.id}><label aria-label={`Select ${appointment.title}`}><input type="checkbox" checked={selectedAppointmentIds.includes(appointment.id)} onChange={(e) => setSelectedAppointmentIds((prev) => e.target.checked ? [...prev, appointment.id] : prev.filter((id) => id !== appointment.id))} /></label><div className="stem-agenda-time">{formatTime(appointment.time)}<small>{formatTime(appointment.end_time)}</small></div><div className="stem-agenda-copy"><span>APPOINTMENT</span><strong>{appointment.title}</strong><p>{clients.find((client) => Number(client.id) === Number(appointment.client_id))?.full_name || appointment.client_name || 'Client'}</p>{appointment.description && <small>{appointment.description}</small>}</div><div className="stem-card-actions"><button onClick={() => handleEditAppointment(appointment)} aria-label="Edit"><FaEdit /></button><button className="danger" onClick={() => handleDeleteAppointment(appointment.id)} aria-label="Delete"><FaTrash /></button></div></article>)}
@@ -756,20 +763,13 @@ const safeEndTime = endTime ? String(endTime) : "";
                                     setShowPlusOptionsModal(false);
                                     setShowBlockModal(true);
                                     setBlockWholeDay(false);
-                                    setBlockDate(selectedDate.toISOString().split('T')[0]);
+                                    setBlockDate(selectedKey);
+                                    setBlockEndDate(selectedKey);
+                                    setStatus({ type: '', message: '' });
                                 }}
                             >
-                                🚫 Block Time
+                                Block dates or times
                             </button>
-                            <button
-                                style={{ marginTop: '10px' }}
-                                onClick={() => {
-                                    setShowPlusOptionsModal(false);
-                                    setShowBlockModal(true);
-                                    setBlockWholeDay(true);
-                                    setBlockDate(selectedKey);
-                                }}
-                            >Block Day</button>
                             <button
                                 style={{ marginTop: '20px', color: 'gray' }}
                                 onClick={() => setShowPlusOptionsModal(false)}
@@ -783,21 +783,21 @@ const safeEndTime = endTime ? String(endTime) : "";
                 {showBlockModal && (
                     <div className="modal">
                         <div className="modal-content">
-                            <h3>{blockWholeDay ? 'Block Entire Day' : 'Block Time Slot'}</h3>
-                            <label>Select Date:</label>
-                            <input type="date" value={blockDate} onChange={(e) => setBlockDate(e.target.value)} />
-
-                            {!blockWholeDay && <><label>Start Time:</label>
+                            <h3>Block dates or times</h3>
+                            <label>From date:</label>
+                            <input type="date" value={blockDate} onChange={(e) => { setBlockDate(e.target.value); if (!blockEndDate || blockEndDate < e.target.value) setBlockEndDate(e.target.value); }} />
+                            <label>Through date:</label>
+                            <input type="date" min={blockDate} value={blockEndDate} onChange={(e) => setBlockEndDate(e.target.value)} />
+                            <label className="block-all-day"><input type="checkbox" checked={blockWholeDay} onChange={(e) => setBlockWholeDay(e.target.checked)} /> All day</label>
+                            {!blockWholeDay && <><label>Start time:</label>
                             <input type="time" value={blockStartTime} onChange={(e) => setBlockStartTime(e.target.value)} />
-
-                            <label>Duration (Hours):</label>
-                            <input type="number" min="1" value={blockDuration} onChange={(e) => setBlockDuration(e.target.value)} /></>}
-
+                            <label>End time:</label>
+                            <input type="time" value={blockEndTime} onChange={(e) => setBlockEndTime(e.target.value)} /></>}
                             <label>Reason:</label>
                             <input type="text" value={blockLabel} onChange={(e) => setBlockLabel(e.target.value)} />
-
-                            {blockWholeDay && <p>This prevents new bookings for the selected date. Existing appointments stay on the schedule.</p>}
-                            <button onClick={handleBlockTime}>{blockWholeDay ? 'Block Day' : 'Block Time'}</button>
+                            <p>New bookings will be unavailable on these dates. Existing appointments stay on the schedule.</p>
+                            {status.type === 'error' && <p role="alert">{status.message}</p>}
+                            <button onClick={handleBlockTime} disabled={savingBlock}>{savingBlock ? 'Saving…' : 'Block range'}</button>
                             <button onClick={() => setShowBlockModal(false)}>Cancel</button>
                         </div>
                     </div>
