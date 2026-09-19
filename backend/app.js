@@ -224,7 +224,7 @@ async function ensureUniqueUsername(baseUsername) {
 
   // try base first
   const exists = await pool.query(
-    "SELECT 1 FROM users WHERE username = $1 LIMIT 1",
+    "SELECT 1 FROM users WHERE lower(username) = lower($1) LIMIT 1",
     [base]
   );
   if (exists.rowCount === 0) return base;
@@ -233,7 +233,7 @@ async function ensureUniqueUsername(baseUsername) {
   for (let n = 2; n <= 50; n++) {
     const candidate = `${base}${n}`.slice(0, 18);
     const chk = await pool.query(
-      "SELECT 1 FROM users WHERE username = $1 LIMIT 1",
+      "SELECT 1 FROM users WHERE lower(username) = lower($1) LIMIT 1",
       [candidate]
     );
     if (chk.rowCount === 0) return candidate;
@@ -386,7 +386,7 @@ app.post('/register', async (req, res) => {
 
     // Check if the username or email already exists
     const existingUser = await client.query(
-      'SELECT id FROM users WHERE username = $1 OR lower(email) = lower($2) LIMIT 1',
+      'SELECT id FROM users WHERE lower(username) = lower($1) OR lower(email) = lower($2) LIMIT 1',
       [username, email]
     );
 
@@ -474,22 +474,21 @@ app.post('/register', async (req, res) => {
 
 
 app.post('/login', async (req, res) => {
-    console.log('Login request received:', req.body); // Log the request body
-    const { username, password } = req.body;
+    const username = String(req.body?.username || '').trim();
+    const password = String(req.body?.password || '');
+
+    if (!username || !password) return res.status(400).send('Username and password are required');
 
     try {
-        const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
-        console.log('Database query result:', result.rows); // Log the query result
+        const result = await pool.query('SELECT * FROM users WHERE lower(username) = lower($1) LIMIT 1', [username]);
 
         if (result.rowCount === 0) {
             return res.status(404).send('User not found');
         }
 
         const user = result.rows[0];
-        console.log('User found:', user); // Log the user details
 
         const passwordMatch = await bcrypt.compare(password, user.password);
-        console.log('Password match:', passwordMatch); // Log password comparison result
 
         if (!passwordMatch) {
             return res.status(401).send('Invalid password');
