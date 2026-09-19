@@ -10,7 +10,7 @@ import { fileURLToPath } from 'url'; // Required for ES module __dirname
 import bcrypt from 'bcrypt';
 import pool from './db.js'; // Import the centralized pool connection
 import axios from "axios"; // ✅ Import axios
-import {sendPortalInviteEmail, sendRegistrationEmail,sendResetEmail, sendTutoringIntakeEmail, sendTutoringApptEmail, sendTutoringRescheduleEmail,sendCancellationEmail, sendTextMessage,  sendMentorSessionLogEmail} from './emailService.js';
+import {sendPortalInviteEmail, sendRegistrationEmail, sendResetEmail, sendUsernameReminderEmail, sendTutoringIntakeEmail, sendTutoringApptEmail, sendTutoringRescheduleEmail,sendCancellationEmail, sendTextMessage,  sendMentorSessionLogEmail} from './emailService.js';
 import 'dotenv/config';
 import {WebSocketServer} from 'ws';
 import http from 'http';
@@ -1764,7 +1764,8 @@ app.post('/api/clients', async (req, res) => {
 
 app.get('/api/clients', async (req, res) => {
     try {
-        const result = await pool.query('SELECT id, full_name, email, phone, category, user_id  FROM clients ORDER BY id DESC');
+        const result = await pool.query(`SELECT c.id, c.full_name, c.email, c.phone, c.category, c.user_id,
+          u.username FROM clients c LEFT JOIN users u ON u.id = c.user_id ORDER BY c.id DESC`);
         res.status(200).json(result.rows);
     } catch (error) {
         console.error('Error fetching clients:', error);
@@ -2662,6 +2663,25 @@ app.post('/appointments/bulk-delete', async (req, res) => {
   } catch (error) {
     console.error('Bulk appointment deletion failed:', error);
     return res.status(500).json({ error: 'Failed to delete appointments.' });
+  }
+});
+
+app.post('/forgot-username', async (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const response = { message: 'If that email is linked to an account, the username has been sent.' };
+  if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'Enter a valid email address.' });
+  }
+  try {
+    const result = await pool.query('SELECT name, username, email FROM users WHERE lower(email) = $1 LIMIT 1', [email]);
+    if (result.rowCount) {
+      const user = result.rows[0];
+      await sendUsernameReminderEmail(user.email, user.name, user.username);
+    }
+    return res.json(response);
+  } catch (error) {
+    console.error('Forgot username failed:', error);
+    return res.status(500).json({ error: 'The username reminder could not be sent. Please try again.' });
   }
 });
 

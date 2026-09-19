@@ -74,6 +74,23 @@ const sendResetEmail = async (email, resetLink) => {
 
 export { sendResetEmail };
 
+const sendUsernameReminderEmail = async (email, name, username) => {
+  const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[character]));
+  await transporter.sendMail({
+    from: EMAIL_USER,
+    to: email,
+    subject: 'Your STEM with Lyn username',
+    html: `<p>Hello ${escapeHtml(name || 'there')},</p>
+      <p>Your STEM with Lyn portal username is:</p>
+      <p style="font-size:20px;font-weight:700">${escapeHtml(username)}</p>
+      <p>You can return to the portal login page and use this username to sign in.</p>`,
+  });
+};
+
+export { sendUsernameReminderEmail };
+
 /* ======================================================
    Registration Email
 ====================================================== */

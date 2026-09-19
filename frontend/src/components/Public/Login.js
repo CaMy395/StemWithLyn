@@ -124,6 +124,7 @@ const Login = ({ onLogin }) => {
           <p>
             <Link to="/forgot-password">Forgot Password?</Link>
           </p>
+          <p><Link to="/forgot-username">Forgot Username?</Link></p>
         </div>
       </div>
     </div>

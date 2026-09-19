@@ -6,6 +6,7 @@ import TechIntake from './components/Public/TechIntake';
 import Register from './components/Public/Register';
 import Login from './components/Public/Login';
 import ForgotPassword from './components/Public/ForgotPassword';
+import ForgotUsername from './components/Public/ForgotUsername';
 import ResetPassword from './components/Public/ResetPassword';
 import ClientPortalPage from './components/User/ClientPortalPage';
 import ClientSchedulingPage from './components/Public/ClientSchedulingPage';
@@ -297,6 +298,7 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
                 <Route path="/register" element={<Register />} />
                 <Route path="/login" element={<Login onLogin={onLogin} />} />
                 <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/forgot-username" element={<ForgotUsername />} />
                 <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/tutoring-intake" element={<TutoringIntake />} />
                 <Route path="/tech-engineering" element={<TechIntake />} />
