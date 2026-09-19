@@ -15,6 +15,10 @@ export default function createStudyLibraryRouter(pool, tokenSecret) {
   let schemaPromise;
   const ensureSchema = () => {
     if (!schemaPromise) schemaPromise = (async () => {
+      await pool.query(`CREATE TABLE IF NOT EXISTS study_folders (
+        id bigserial PRIMARY KEY, name text NOT NULL UNIQUE,
+        sort_order integer NOT NULL DEFAULT 0, created_at timestamptz NOT NULL DEFAULT now()
+      )`);
       await pool.query(`CREATE TABLE IF NOT EXISTS study_materials (
         id bigserial PRIMARY KEY, title text NOT NULL, description text NOT NULL DEFAULT '',
         subject text NOT NULL DEFAULT '', grade text NOT NULL DEFAULT '',
@@ -22,6 +26,8 @@ export default function createStudyLibraryRouter(pool, tokenSecret) {
         file_name text NOT NULL, mime_type text NOT NULL, file_data bytea NOT NULL,
         created_at timestamptz NOT NULL DEFAULT now()
       )`);
+      await pool.query(`ALTER TABLE study_materials ADD COLUMN IF NOT EXISTS folder_id bigint
+        REFERENCES study_folders(id) ON DELETE RESTRICT`);
       await pool.query(`CREATE TABLE IF NOT EXISTS study_questions (
         id bigserial PRIMARY KEY, subject text NOT NULL DEFAULT '', grade text NOT NULL DEFAULT '',
         prompt text NOT NULL, options jsonb NOT NULL, correct_index integer NOT NULL,
@@ -58,10 +64,44 @@ export default function createStudyLibraryRouter(pool, tokenSecret) {
     fileFilter: (_req, file, callback) => callback(null, acceptedTypes.has(file.mimetype)),
   }).single('file');
 
+  router.get('/folders', async (_req, res) => {
+    try {
+      const result = await pool.query(`SELECT f.id, f.name, f.sort_order, COUNT(m.id)::integer AS material_count
+        FROM study_folders f LEFT JOIN study_materials m ON m.folder_id = f.id
+        GROUP BY f.id ORDER BY f.sort_order, f.name`);
+      const unfiled = await pool.query('SELECT COUNT(*)::integer AS material_count FROM study_materials WHERE folder_id IS NULL');
+      return res.json({ folders: result.rows, unfiledCount: unfiled.rows[0].material_count });
+    } catch (error) { console.error('Study folders list failed:', error); return res.status(500).json({ error: 'Could not load folders.' }); }
+  });
+
+  router.post('/folders', requireAdmin, async (req, res) => {
+    const name = String(req.body?.name || '').trim();
+    if (!name || name.length > 80) return res.status(400).json({ error: 'Enter a folder name up to 80 characters.' });
+    try {
+      const result = await pool.query(`INSERT INTO study_folders (name, sort_order)
+        VALUES ($1, COALESCE((SELECT MAX(sort_order) + 1 FROM study_folders), 0)) RETURNING *`, [name]);
+      return res.status(201).json(result.rows[0]);
+    } catch (error) {
+      if (error.code === '23505') return res.status(409).json({ error: 'That folder already exists.' });
+      console.error('Study folder create failed:', error); return res.status(500).json({ error: 'Could not create folder.' });
+    }
+  });
+
+  router.delete('/folders/:id', requireAdmin, async (req, res) => {
+    try {
+      const used = await pool.query('SELECT 1 FROM study_materials WHERE folder_id = $1 LIMIT 1', [req.params.id]);
+      if (used.rowCount) return res.status(409).json({ error: 'Move or delete the files in this folder first.' });
+      const result = await pool.query('DELETE FROM study_folders WHERE id = $1 RETURNING id', [req.params.id]);
+      if (!result.rowCount) return res.status(404).json({ error: 'Folder not found.' });
+      return res.json({ deletedId: result.rows[0].id });
+    } catch (error) { console.error('Study folder delete failed:', error); return res.status(500).json({ error: 'Could not delete folder.' }); }
+  });
+
   router.get('/materials', async (_req, res) => {
     try {
-      const result = await pool.query(`SELECT id, title, description, subject, grade, kind, file_name, mime_type, created_at
-        FROM study_materials ORDER BY created_at DESC, id DESC`);
+      const result = await pool.query(`SELECT m.id, m.title, m.description, m.subject, m.grade, m.kind,
+        m.file_name, m.mime_type, m.folder_id, f.name AS folder_name, m.created_at
+        FROM study_materials m LEFT JOIN study_folders f ON f.id = m.folder_id ORDER BY m.created_at DESC, m.id DESC`);
       return res.json(result.rows);
     } catch (error) { console.error('Study materials list failed:', error); return res.status(500).json({ error: 'Could not load materials.' }); }
   });
@@ -70,18 +110,21 @@ export default function createStudyLibraryRouter(pool, tokenSecret) {
     upload(req, res, async (uploadError) => {
       if (uploadError) return res.status(400).json({ error: 'Upload failed. The file must be 8 MB or smaller.' });
       const { title, description = '', subject = '', grade = '', kind } = req.body || {};
+      const folderId = Number(req.body?.folderId);
       if (!req.file || !acceptedTypes.has(req.file.mimetype)) return res.status(400).json({ error: 'Choose a PDF, image, or Word document.' });
       if (!['notes', 'examples'].includes(kind) || !title?.trim() || title.length > 160 ||
-          description.length > 1000 || subject.length > 80 || grade.length > 40) {
+          description.length > 1000 || subject.length > 80 || grade.length > 40 || !Number.isSafeInteger(folderId) || folderId < 1) {
         return res.status(400).json({ error: 'Enter a title, type, and valid details.' });
       }
       try {
+        const folder = await pool.query('SELECT id FROM study_folders WHERE id = $1', [folderId]);
+        if (!folder.rowCount) return res.status(400).json({ error: 'Choose a folder.' });
         const safeName = String(req.file.originalname || 'material').replace(/[\\/\r\n\0]/g, '').slice(0, 180);
         const result = await pool.query(`INSERT INTO study_materials
-          (title, description, subject, grade, kind, file_name, mime_type, file_data)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-          RETURNING id, title, description, subject, grade, kind, file_name, mime_type, created_at`,
-          [title.trim(), description.trim(), subject.trim(), grade.trim(), kind, safeName, req.file.mimetype, req.file.buffer]);
+          (title, description, subject, grade, kind, file_name, mime_type, file_data, folder_id)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+          RETURNING id, title, description, subject, grade, kind, file_name, mime_type, folder_id, created_at`,
+          [title.trim(), description.trim(), subject.trim(), grade.trim(), kind, safeName, req.file.mimetype, req.file.buffer, folderId]);
         return res.status(201).json(result.rows[0]);
       } catch (error) { console.error('Study material upload failed:', error); return res.status(500).json({ error: 'Could not save material.' }); }
     });
@@ -106,6 +149,17 @@ export default function createStudyLibraryRouter(pool, tokenSecret) {
       if (!result.rowCount) return res.status(404).json({ error: 'Material not found.' });
       return res.json({ deletedId: result.rows[0].id });
     } catch (error) { console.error('Study material delete failed:', error); return res.status(500).json({ error: 'Could not delete material.' }); }
+  });
+
+  router.patch('/materials/:id/folder', requireAdmin, async (req, res) => {
+    const folderId = Number(req.body?.folderId);
+    if (!Number.isSafeInteger(folderId) || folderId < 1) return res.status(400).json({ error: 'Choose a folder.' });
+    try {
+      const result = await pool.query(`UPDATE study_materials SET folder_id = $1
+        WHERE id = $2 AND EXISTS (SELECT 1 FROM study_folders WHERE id = $1) RETURNING id, folder_id`, [folderId, req.params.id]);
+      if (!result.rowCount) return res.status(404).json({ error: 'Material or folder not found.' });
+      return res.json(result.rows[0]);
+    } catch (error) { console.error('Study material move failed:', error); return res.status(500).json({ error: 'Could not move material.' }); }
   });
 
   router.get('/questions', async (req, res) => {
