@@ -19,6 +19,11 @@ export default function createStudyLibraryRouter(pool, tokenSecret) {
         id bigserial PRIMARY KEY, name text NOT NULL UNIQUE,
         sort_order integer NOT NULL DEFAULT 0, created_at timestamptz NOT NULL DEFAULT now()
       )`);
+      await pool.query(`ALTER TABLE study_folders ADD COLUMN IF NOT EXISTS parent_id bigint
+        REFERENCES study_folders(id) ON DELETE RESTRICT`);
+      await pool.query('ALTER TABLE study_folders DROP CONSTRAINT IF EXISTS study_folders_name_key');
+      await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS study_folders_parent_name_unique
+        ON study_folders (COALESCE(parent_id, 0), LOWER(name))`);
       await pool.query(`CREATE TABLE IF NOT EXISTS study_materials (
         id bigserial PRIMARY KEY, title text NOT NULL, description text NOT NULL DEFAULT '',
         subject text NOT NULL DEFAULT '', grade text NOT NULL DEFAULT '',
@@ -66,8 +71,10 @@ export default function createStudyLibraryRouter(pool, tokenSecret) {
 
   router.get('/folders', async (_req, res) => {
     try {
-      const result = await pool.query(`SELECT f.id, f.name, f.sort_order, COUNT(m.id)::integer AS material_count
+      const result = await pool.query(`SELECT f.id, f.name, f.parent_id, f.sort_order,
+        COUNT(DISTINCT m.id)::integer AS material_count, COUNT(DISTINCT child.id)::integer AS child_count
         FROM study_folders f LEFT JOIN study_materials m ON m.folder_id = f.id
+        LEFT JOIN study_folders child ON child.parent_id = f.id
         GROUP BY f.id ORDER BY f.sort_order, f.name`);
       const unfiled = await pool.query('SELECT COUNT(*)::integer AS material_count FROM study_materials WHERE folder_id IS NULL');
       return res.json({ folders: result.rows, unfiledCount: unfiled.rows[0].material_count });
@@ -76,10 +83,16 @@ export default function createStudyLibraryRouter(pool, tokenSecret) {
 
   router.post('/folders', requireAdmin, async (req, res) => {
     const name = String(req.body?.name || '').trim();
+    const parentId = req.body?.parentId ? Number(req.body.parentId) : null;
     if (!name || name.length > 80) return res.status(400).json({ error: 'Enter a folder name up to 80 characters.' });
+    if (parentId !== null && (!Number.isSafeInteger(parentId) || parentId < 1)) return res.status(400).json({ error: 'Choose a valid parent folder.' });
     try {
-      const result = await pool.query(`INSERT INTO study_folders (name, sort_order)
-        VALUES ($1, COALESCE((SELECT MAX(sort_order) + 1 FROM study_folders), 0)) RETURNING *`, [name]);
+      if (parentId !== null) {
+        const parent = await pool.query('SELECT id FROM study_folders WHERE id = $1', [parentId]);
+        if (!parent.rowCount) return res.status(400).json({ error: 'Parent folder not found.' });
+      }
+      const result = await pool.query(`INSERT INTO study_folders (name, parent_id, sort_order)
+        VALUES ($1, $2, COALESCE((SELECT MAX(sort_order) + 1 FROM study_folders WHERE parent_id IS NOT DISTINCT FROM $2), 0)) RETURNING *`, [name, parentId]);
       return res.status(201).json(result.rows[0]);
     } catch (error) {
       if (error.code === '23505') return res.status(409).json({ error: 'That folder already exists.' });
@@ -91,6 +104,8 @@ export default function createStudyLibraryRouter(pool, tokenSecret) {
     try {
       const used = await pool.query('SELECT 1 FROM study_materials WHERE folder_id = $1 LIMIT 1', [req.params.id]);
       if (used.rowCount) return res.status(409).json({ error: 'Move or delete the files in this folder first.' });
+      const children = await pool.query('SELECT 1 FROM study_folders WHERE parent_id = $1 LIMIT 1', [req.params.id]);
+      if (children.rowCount) return res.status(409).json({ error: 'Move or delete the subfolders first.' });
       const result = await pool.query('DELETE FROM study_folders WHERE id = $1 RETURNING id', [req.params.id]);
       if (!result.rowCount) return res.status(404).json({ error: 'Folder not found.' });
       return res.json({ deletedId: result.rows[0].id });

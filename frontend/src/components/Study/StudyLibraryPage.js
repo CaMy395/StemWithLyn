@@ -33,6 +33,29 @@ export default function StudyLibraryPage({ adminMode = false }) {
   const [feedback, setFeedback] = useState({});
   const [materialForm, setMaterialForm] = useState({ folderId: '', title: '', description: '', subject: '', grade: '', kind: 'notes', file: null });
   const [questionForm, setQuestionForm] = useState({ materialId: '', subject: '', grade: '', prompt: '', options: ['', '', '', ''], correctIndex: 0, explanation: '' });
+  const folderById = new Map(folders.map(folder => [String(folder.id), folder]));
+  const currentFolder = folderById.get(selectedFolder);
+  const childFolders = folders.filter(folder => selectedFolder
+    ? String(folder.parent_id || '') === selectedFolder
+    : !folder.parent_id);
+  const folderPath = currentFolder ? (() => {
+    const path = [];
+    let folder = currentFolder;
+    while (folder) {
+      path.unshift(folder);
+      folder = folderById.get(String(folder.parent_id));
+    }
+    return path;
+  })() : [];
+  const folderLabel = (folder) => {
+    const names = [folder.name];
+    let parent = folderById.get(String(folder.parent_id));
+    while (parent) {
+      names.unshift(parent.name);
+      parent = folderById.get(String(parent.parent_id));
+    }
+    return names.join(' / ');
+  };
   const notes = materials.filter(item => item.kind === 'notes');
   const folderMaterials = materials.filter(item => selectedFolder === 'unfiled' ? !item.folder_id : String(item.folder_id) === selectedFolder);
   const folderNotes = folderMaterials.filter(item => item.kind === 'notes');
@@ -121,7 +144,8 @@ export default function StudyLibraryPage({ adminMode = false }) {
   const createFolder = async (event) => {
     event.preventDefault();
     try {
-      const folder = await request('/folders', { method: 'POST', body: JSON.stringify({ name: folderName }) });
+      const parentId = selectedFolder && selectedFolder !== 'unfiled' ? Number(selectedFolder) : null;
+      const folder = await request('/folders', { method: 'POST', body: JSON.stringify({ name: folderName, parentId }) });
       setFolderName(''); setSelectedFolder(String(folder.id));
       setMaterialForm(current => ({ ...current, folderId: String(folder.id) }));
       setMessage('Folder created.'); await load();
@@ -130,8 +154,14 @@ export default function StudyLibraryPage({ adminMode = false }) {
 
   const deleteFolder = async (id) => {
     if (!window.confirm('Delete this empty folder?')) return;
-    try { await request(`/folders/${id}`, { method: 'DELETE' }); setSelectedFolder(''); await load(); }
+    const folder = folders.find(item => String(item.id) === String(id));
+    try { await request(`/folders/${id}`, { method: 'DELETE' }); setSelectedFolder(folder?.parent_id ? String(folder.parent_id) : ''); await load(); }
     catch (err) { setError(err.message); }
+  };
+
+  const openFolder = (id) => {
+    setSelectedFolder(String(id)); setSelectedNoteId(''); setTab('notes');
+    setMaterialForm(current => ({ ...current, folderId: String(id) }));
   };
 
   const moveMaterial = async (id, folderId) => {
@@ -144,10 +174,10 @@ export default function StudyLibraryPage({ adminMode = false }) {
     <header className="study-hero"><span>STEM WITH LYN</span><h1>Study library</h1><p>{adminMode ? 'Share notes and worked examples, then add a few practice questions.' : 'Review your notes, explore examples, and try a practice question.'}</p></header>
     {error && <p className="study-alert" role="alert">{error}</p>}
     {message && <p className="study-success" role="status">{message}</p>}
-    {adminMode && <form className="study-folder-create" onSubmit={createFolder}><label>New folder<input required maxLength="80" value={folderName} onChange={event => setFolderName(event.target.value)} placeholder="e.g. 8th Grade" /></label><button>Create folder</button></form>}
+    {adminMode && selectedFolder !== 'unfiled' && <form className="study-folder-create" onSubmit={createFolder}><label>{selectedFolder ? `New subfolder inside ${currentFolder?.name || 'folder'}` : 'New folder'}<input required maxLength="80" value={folderName} onChange={event => setFolderName(event.target.value)} placeholder={selectedFolder ? 'e.g. Algebra' : 'e.g. 8th Grade'} /></label><button>Create folder</button></form>}
     {adminMode && <section className="study-admin-grid">
       <form className="study-panel" onSubmit={upload}><h2>Upload a material</h2><p>PDF, image, or Word document, up to 8 MB.</p>
-        <label>Folder<select required value={materialForm.folderId} onChange={e => setMaterialForm({ ...materialForm, folderId: e.target.value })}><option value="">Choose a folder</option>{folders.map(folder => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</select></label>
+        <label>Folder<select required value={materialForm.folderId} onChange={e => setMaterialForm({ ...materialForm, folderId: e.target.value })}><option value="">Choose a folder</option>{folders.map(folder => <option key={folder.id} value={folder.id}>{folderLabel(folder)}</option>)}</select></label>
         <label>Title<input required maxLength="160" value={materialForm.title} onChange={e => setMaterialForm({ ...materialForm, title: e.target.value })} /></label>
         <label>Type<select value={materialForm.kind} onChange={e => setMaterialForm({ ...materialForm, kind: e.target.value })}><option value="notes">Notes</option><option value="examples">Worked example</option></select></label>
         <div className="study-fields"><label>Subject<input maxLength="80" placeholder="e.g. Algebra" value={materialForm.subject} onChange={e => setMaterialForm({ ...materialForm, subject: e.target.value })} /></label><label>Grade or level<input maxLength="40" placeholder="e.g. Grade 8" value={materialForm.grade} onChange={e => setMaterialForm({ ...materialForm, grade: e.target.value })} /></label></div>
@@ -166,8 +196,9 @@ export default function StudyLibraryPage({ adminMode = false }) {
         <button disabled={busy || notes.length === 0}>Add question</button>
       </form>
     </section>}
-    {!selectedFolder ? <section><h2>Folders</h2><div className="study-folder-grid">{folders.map(folder => <article className="study-folder" key={folder.id}><button onClick={() => { setSelectedFolder(String(folder.id)); setSelectedNoteId(''); setTab('notes'); setMaterialForm(current => ({ ...current, folderId: String(folder.id) })); }}><span className="study-folder-icon">📁</span><strong>{folder.name}</strong><small>{folder.material_count} file{Number(folder.material_count) === 1 ? '' : 's'}</small></button>{adminMode && Number(folder.material_count) === 0 && <button className="study-folder-delete" onClick={() => deleteFolder(folder.id)}>Delete</button>}</article>)}{(unfiledCount > 0 || unlinkedQuestions.length > 0) && <article className="study-folder"><button onClick={() => { setSelectedFolder('unfiled'); setSelectedNoteId(''); setTab('notes'); }}><span className="study-folder-icon">📂</span><strong>Unfiled</strong><small>{unfiledCount} file{unfiledCount === 1 ? '' : 's'}{unlinkedQuestions.length > 0 ? ` · ${unlinkedQuestions.length} unlinked question${unlinkedQuestions.length === 1 ? '' : 's'}` : ''}</small></button></article>}</div>{folders.length === 0 && unfiledCount === 0 && unlinkedQuestions.length === 0 && <p className="study-empty">Create the first grade folder to start organizing the library.</p>}</section> : <>
-    <div className="study-folder-heading"><button onClick={() => { setSelectedFolder(''); setSelectedNoteId(''); }}>← All folders</button><h2>{selectedFolder === 'unfiled' ? 'Unfiled' : folders.find(folder => String(folder.id) === selectedFolder)?.name}</h2></div>
+    {!selectedFolder ? <section><h2>Folders</h2><div className="study-folder-grid">{childFolders.map(folder => <article className="study-folder" key={folder.id}><button onClick={() => openFolder(folder.id)}><span className="study-folder-icon">📁</span><strong>{folder.name}</strong><small>{folder.material_count} file{Number(folder.material_count) === 1 ? '' : 's'} · {folder.child_count} folder{Number(folder.child_count) === 1 ? '' : 's'}</small></button>{adminMode && Number(folder.material_count) === 0 && Number(folder.child_count) === 0 && <button className="study-folder-delete" onClick={() => deleteFolder(folder.id)}>Delete</button>}</article>)}{(unfiledCount > 0 || unlinkedQuestions.length > 0) && <article className="study-folder"><button onClick={() => { setSelectedFolder('unfiled'); setSelectedNoteId(''); setTab('notes'); }}><span className="study-folder-icon">📂</span><strong>Unfiled</strong><small>{unfiledCount} file{unfiledCount === 1 ? '' : 's'}{unlinkedQuestions.length > 0 ? ` · ${unlinkedQuestions.length} unlinked question${unlinkedQuestions.length === 1 ? '' : 's'}` : ''}</small></button></article>}</div>{childFolders.length === 0 && unfiledCount === 0 && unlinkedQuestions.length === 0 && <p className="study-empty">Create the first grade folder to start organizing the library.</p>}</section> : <>
+    <div className="study-folder-heading"><button onClick={() => { setSelectedFolder(currentFolder?.parent_id ? String(currentFolder.parent_id) : ''); setSelectedNoteId(''); }}>← Back</button><div className="study-breadcrumbs"><button onClick={() => setSelectedFolder('')}>Folders</button>{folderPath.map(folder => <React.Fragment key={folder.id}><span>/</span><button onClick={() => openFolder(folder.id)}>{folder.name}</button></React.Fragment>)}{selectedFolder === 'unfiled' && <><span>/</span><strong>Unfiled</strong></>}</div></div>
+    {selectedFolder !== 'unfiled' && childFolders.length > 0 && <section className="study-subfolders"><h3>Folders</h3><div className="study-folder-grid">{childFolders.map(folder => <article className="study-folder" key={folder.id}><button onClick={() => openFolder(folder.id)}><span className="study-folder-icon">📁</span><strong>{folder.name}</strong><small>{folder.material_count} file{Number(folder.material_count) === 1 ? '' : 's'} · {folder.child_count} folder{Number(folder.child_count) === 1 ? '' : 's'}</small></button>{adminMode && Number(folder.material_count) === 0 && Number(folder.child_count) === 0 && <button className="study-folder-delete" onClick={() => deleteFolder(folder.id)}>Delete</button>}</article>)}</div></section>}
     <div className="study-tabs" role="tablist"><button className={tab === 'notes' ? 'active' : ''} onClick={() => setTab('notes')}>Notes ({folderNotes.length})</button><button className={tab === 'examples' ? 'active' : ''} onClick={() => setTab('examples')}>Worked examples ({folderMaterials.filter(m => m.kind === 'examples').length})</button><button className={tab === 'practice' ? 'active' : ''} onClick={() => setTab('practice')}>Practice ({folderQuestions.length})</button></div>
     {tab !== 'practice' ? <section className="study-list">
       {folderMaterials.filter(item => item.kind === tab).length === 0 && <p className="study-empty">No {tab === 'notes' ? 'notes' : 'worked examples'} have been added here yet.</p>}
@@ -177,7 +208,7 @@ export default function StudyLibraryPage({ adminMode = false }) {
           <div><span className="study-meta">{[item.subject, item.grade].filter(Boolean).join(' · ') || 'STEM'}</span><h2>{item.title}</h2>{item.description && <p>{item.description}</p>}<small>{item.file_name}</small></div>
           <div className="study-actions"><button onClick={() => openMaterial(item)}>Open material</button>
             {item.kind === 'notes' && <button onClick={() => { setSelectedNoteId(String(item.id)); setTab('practice'); }}>Practice ({count})</button>}
-            {adminMode && <label className="study-move">Move to<select value={item.folder_id || ''} onChange={event => moveMaterial(item.id, event.target.value)}><option value="">Choose folder</option>{folders.map(folder => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</select></label>}
+            {adminMode && <label className="study-move">Move to<select value={item.folder_id || ''} onChange={event => moveMaterial(item.id, event.target.value)}><option value="">Choose folder</option>{folders.map(folder => <option key={folder.id} value={folder.id}>{folderLabel(folder)}</option>)}</select></label>}
             {adminMode && <button className="study-danger" onClick={() => remove('materials', item.id)}>Delete</button>}
           </div>
         </article>;
