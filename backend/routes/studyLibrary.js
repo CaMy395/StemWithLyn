@@ -112,6 +112,34 @@ export default function createStudyLibraryRouter(pool, tokenSecret) {
     } catch (error) { console.error('Study folder delete failed:', error); return res.status(500).json({ error: 'Could not delete folder.' }); }
   });
 
+  router.patch('/folders/:id', requireAdmin, async (req, res) => {
+    const name = String(req.body?.name || '').trim();
+    const parentId = req.body?.parentId === null || req.body?.parentId === '' ? null : Number(req.body?.parentId);
+    const folderId = Number(req.params.id);
+    if (!name || name.length > 80 || !Number.isSafeInteger(folderId) ||
+        (parentId !== null && (!Number.isSafeInteger(parentId) || parentId < 1))) {
+      return res.status(400).json({ error: 'Enter a folder name and choose a valid location.' });
+    }
+    if (parentId === folderId) return res.status(400).json({ error: 'A folder cannot be inside itself.' });
+    try {
+      if (parentId !== null) {
+        const invalidParent = await pool.query(`WITH RECURSIVE descendants AS (
+          SELECT id FROM study_folders WHERE parent_id = $1
+          UNION ALL SELECT f.id FROM study_folders f JOIN descendants d ON f.parent_id = d.id
+        ) SELECT 1 FROM descendants WHERE id = $2`, [folderId, parentId]);
+        if (invalidParent.rowCount) return res.status(400).json({ error: 'A folder cannot be moved inside one of its subfolders.' });
+      }
+      const result = await pool.query(`UPDATE study_folders SET name = $1, parent_id = $2
+        WHERE id = $3 AND ($2::bigint IS NULL OR EXISTS (SELECT 1 FROM study_folders WHERE id = $2))
+        RETURNING *`, [name, parentId, folderId]);
+      if (!result.rowCount) return res.status(404).json({ error: 'Folder or destination not found.' });
+      return res.json(result.rows[0]);
+    } catch (error) {
+      if (error.code === '23505') return res.status(409).json({ error: 'A folder with that name already exists here.' });
+      console.error('Study folder update failed:', error); return res.status(500).json({ error: 'Could not update folder.' });
+    }
+  });
+
   router.get('/materials', async (_req, res) => {
     try {
       const result = await pool.query(`SELECT m.id, m.title, m.description, m.subject, m.grade, m.kind,
@@ -175,6 +203,29 @@ export default function createStudyLibraryRouter(pool, tokenSecret) {
       if (!result.rowCount) return res.status(404).json({ error: 'Material or folder not found.' });
       return res.json(result.rows[0]);
     } catch (error) { console.error('Study material move failed:', error); return res.status(500).json({ error: 'Could not move material.' }); }
+  });
+
+  router.patch('/materials/:id', requireAdmin, async (req, res) => {
+    const { title, description = '', subject = '', grade = '', kind } = req.body || {};
+    const folderId = Number(req.body?.folderId);
+    if (!['notes', 'examples'].includes(kind) || !title?.trim() || title.length > 160 ||
+        description.length > 1000 || subject.length > 80 || grade.length > 40 ||
+        !Number.isSafeInteger(folderId) || folderId < 1) {
+      return res.status(400).json({ error: 'Enter a title, type, folder, and valid details.' });
+    }
+    try {
+      if (kind === 'examples') {
+        const linkedQuestions = await pool.query('SELECT 1 FROM study_questions WHERE material_id = $1 LIMIT 1', [req.params.id]);
+        if (linkedQuestions.rowCount) return res.status(409).json({ error: 'Move or delete the linked practice questions before changing this note to a worked example.' });
+      }
+      const result = await pool.query(`UPDATE study_materials SET title = $1, description = $2,
+        subject = $3, grade = $4, kind = $5, folder_id = $6
+        WHERE id = $7 AND EXISTS (SELECT 1 FROM study_folders WHERE id = $6)
+        RETURNING id, title, description, subject, grade, kind, folder_id`,
+        [title.trim(), description.trim(), subject.trim(), grade.trim(), kind, folderId, req.params.id]);
+      if (!result.rowCount) return res.status(404).json({ error: 'Material or folder not found.' });
+      return res.json(result.rows[0]);
+    } catch (error) { console.error('Study material update failed:', error); return res.status(500).json({ error: 'Could not update material.' }); }
   });
 
   router.get('/questions', async (req, res) => {

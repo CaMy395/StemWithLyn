@@ -29,6 +29,8 @@ export default function StudyLibraryPage({ adminMode = false }) {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(null);
+  const [menuOpen, setMenuOpen] = useState('');
+  const [editTarget, setEditTarget] = useState(null);
   const [answers, setAnswers] = useState({});
   const [feedback, setFeedback] = useState({});
   const [materialForm, setMaterialForm] = useState({ folderId: '', title: '', description: '', subject: '', grade: '', kind: 'notes', file: null });
@@ -55,6 +57,14 @@ export default function StudyLibraryPage({ adminMode = false }) {
       parent = folderById.get(String(parent.parent_id));
     }
     return names.join(' / ');
+  };
+  const isFolderOrDescendant = (folder, possibleAncestorId) => {
+    let current = folder;
+    while (current) {
+      if (String(current.id) === String(possibleAncestorId)) return true;
+      current = folderById.get(String(current.parent_id));
+    }
+    return false;
   };
   const notes = materials.filter(item => item.kind === 'notes');
   const folderMaterials = materials.filter(item => selectedFolder === 'unfiled' ? !item.folder_id : String(item.folder_id) === selectedFolder);
@@ -164,11 +174,34 @@ export default function StudyLibraryPage({ adminMode = false }) {
     setMaterialForm(current => ({ ...current, folderId: String(id) }));
   };
 
-  const moveMaterial = async (id, folderId) => {
-    if (!folderId) return;
-    try { await request(`/materials/${id}/folder`, { method: 'PATCH', body: JSON.stringify({ folderId: Number(folderId) }) }); await load(); }
-    catch (err) { setError(err.message); }
+  const editFolder = (folder) => {
+    setMenuOpen('');
+    setEditTarget({ type: 'folder', id: folder.id, name: folder.name, parentId: folder.parent_id ? String(folder.parent_id) : '' });
   };
+
+  const editMaterial = (item) => {
+    setMenuOpen('');
+    setEditTarget({ type: 'material', id: item.id, title: item.title, description: item.description || '', subject: item.subject || '', grade: item.grade || '', kind: item.kind, folderId: item.folder_id ? String(item.folder_id) : '' });
+  };
+
+  const saveEdit = async (event) => {
+    event.preventDefault(); setBusy(true); setError('');
+    try {
+      if (editTarget.type === 'folder') {
+        await request(`/folders/${editTarget.id}`, { method: 'PATCH', body: JSON.stringify({ name: editTarget.name, parentId: editTarget.parentId ? Number(editTarget.parentId) : null }) });
+        setMessage('Folder updated.');
+      } else {
+        await request(`/materials/${editTarget.id}`, { method: 'PATCH', body: JSON.stringify({ ...editTarget, folderId: Number(editTarget.folderId) }) });
+        setMessage('Material updated.');
+      }
+      setEditTarget(null); await load();
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
+  };
+
+  const folderCard = (folder) => <article className="study-folder" key={folder.id}>
+    <button onClick={() => openFolder(folder.id)}><span className="study-folder-icon">📁</span><strong>{folder.name}</strong><small>{folder.material_count} file{Number(folder.material_count) === 1 ? '' : 's'} · {folder.child_count} folder{Number(folder.child_count) === 1 ? '' : 's'}</small></button>
+    {adminMode && <div className="study-more"><button aria-label={`Options for ${folder.name}`} aria-expanded={menuOpen === `folder-${folder.id}`} onClick={() => setMenuOpen(menuOpen === `folder-${folder.id}` ? '' : `folder-${folder.id}`)}>…</button>{menuOpen === `folder-${folder.id}` && <div className="study-more-menu"><button onClick={() => editFolder(folder)}>Edit or move</button>{Number(folder.material_count) === 0 && Number(folder.child_count) === 0 && <button className="danger" onClick={() => { setMenuOpen(''); deleteFolder(folder.id); }}>Delete</button>}</div>}</div>}
+  </article>;
 
   return <main className="study-page">
     <header className="study-hero"><span>STEM WITH LYN</span><h1>Study library</h1><p>{adminMode ? 'Share notes and worked examples, then add a few practice questions.' : 'Review your notes, explore examples, and try a practice question.'}</p></header>
@@ -196,9 +229,9 @@ export default function StudyLibraryPage({ adminMode = false }) {
         <button disabled={busy || notes.length === 0}>Add question</button>
       </form>
     </section>}
-    {!selectedFolder ? <section><h2>Folders</h2><div className="study-folder-grid">{childFolders.map(folder => <article className="study-folder" key={folder.id}><button onClick={() => openFolder(folder.id)}><span className="study-folder-icon">📁</span><strong>{folder.name}</strong><small>{folder.material_count} file{Number(folder.material_count) === 1 ? '' : 's'} · {folder.child_count} folder{Number(folder.child_count) === 1 ? '' : 's'}</small></button>{adminMode && Number(folder.material_count) === 0 && Number(folder.child_count) === 0 && <button className="study-folder-delete" onClick={() => deleteFolder(folder.id)}>Delete</button>}</article>)}{(unfiledCount > 0 || unlinkedQuestions.length > 0) && <article className="study-folder"><button onClick={() => { setSelectedFolder('unfiled'); setSelectedNoteId(''); setTab('notes'); }}><span className="study-folder-icon">📂</span><strong>Unfiled</strong><small>{unfiledCount} file{unfiledCount === 1 ? '' : 's'}{unlinkedQuestions.length > 0 ? ` · ${unlinkedQuestions.length} unlinked question${unlinkedQuestions.length === 1 ? '' : 's'}` : ''}</small></button></article>}</div>{childFolders.length === 0 && unfiledCount === 0 && unlinkedQuestions.length === 0 && <p className="study-empty">Create the first grade folder to start organizing the library.</p>}</section> : <>
+    {!selectedFolder ? <section><h2>Folders</h2><div className="study-folder-grid">{childFolders.map(folderCard)}{(unfiledCount > 0 || unlinkedQuestions.length > 0) && <article className="study-folder"><button onClick={() => { setSelectedFolder('unfiled'); setSelectedNoteId(''); setTab('notes'); }}><span className="study-folder-icon">📂</span><strong>Unfiled</strong><small>{unfiledCount} file{unfiledCount === 1 ? '' : 's'}{unlinkedQuestions.length > 0 ? ` · ${unlinkedQuestions.length} unlinked question${unlinkedQuestions.length === 1 ? '' : 's'}` : ''}</small></button></article>}</div>{childFolders.length === 0 && unfiledCount === 0 && unlinkedQuestions.length === 0 && <p className="study-empty">Create the first grade folder to start organizing the library.</p>}</section> : <>
     <div className="study-folder-heading"><button onClick={() => { setSelectedFolder(currentFolder?.parent_id ? String(currentFolder.parent_id) : ''); setSelectedNoteId(''); }}>← Back</button><div className="study-breadcrumbs"><button onClick={() => setSelectedFolder('')}>Folders</button>{folderPath.map(folder => <React.Fragment key={folder.id}><span>/</span><button onClick={() => openFolder(folder.id)}>{folder.name}</button></React.Fragment>)}{selectedFolder === 'unfiled' && <><span>/</span><strong>Unfiled</strong></>}</div></div>
-    {selectedFolder !== 'unfiled' && childFolders.length > 0 && <section className="study-subfolders"><h3>Folders</h3><div className="study-folder-grid">{childFolders.map(folder => <article className="study-folder" key={folder.id}><button onClick={() => openFolder(folder.id)}><span className="study-folder-icon">📁</span><strong>{folder.name}</strong><small>{folder.material_count} file{Number(folder.material_count) === 1 ? '' : 's'} · {folder.child_count} folder{Number(folder.child_count) === 1 ? '' : 's'}</small></button>{adminMode && Number(folder.material_count) === 0 && Number(folder.child_count) === 0 && <button className="study-folder-delete" onClick={() => deleteFolder(folder.id)}>Delete</button>}</article>)}</div></section>}
+    {selectedFolder !== 'unfiled' && childFolders.length > 0 && <section className="study-subfolders"><h3>Folders</h3><div className="study-folder-grid">{childFolders.map(folderCard)}</div></section>}
     <div className="study-tabs" role="tablist"><button className={tab === 'notes' ? 'active' : ''} onClick={() => setTab('notes')}>Notes ({folderNotes.length})</button><button className={tab === 'examples' ? 'active' : ''} onClick={() => setTab('examples')}>Worked examples ({folderMaterials.filter(m => m.kind === 'examples').length})</button><button className={tab === 'practice' ? 'active' : ''} onClick={() => setTab('practice')}>Practice ({folderQuestions.length})</button></div>
     {tab !== 'practice' ? <section className="study-list">
       {folderMaterials.filter(item => item.kind === tab).length === 0 && <p className="study-empty">No {tab === 'notes' ? 'notes' : 'worked examples'} have been added here yet.</p>}
@@ -208,8 +241,7 @@ export default function StudyLibraryPage({ adminMode = false }) {
           <div><span className="study-meta">{[item.subject, item.grade].filter(Boolean).join(' · ') || 'STEM'}</span><h2>{item.title}</h2>{item.description && <p>{item.description}</p>}<small>{item.file_name}</small></div>
           <div className="study-actions"><button onClick={() => openMaterial(item)}>Open material</button>
             {item.kind === 'notes' && <button onClick={() => { setSelectedNoteId(String(item.id)); setTab('practice'); }}>Practice ({count})</button>}
-            {adminMode && <label className="study-move">Move to<select value={item.folder_id || ''} onChange={event => moveMaterial(item.id, event.target.value)}><option value="">Choose folder</option>{folders.map(folder => <option key={folder.id} value={folder.id}>{folderLabel(folder)}</option>)}</select></label>}
-            {adminMode && <button className="study-danger" onClick={() => remove('materials', item.id)}>Delete</button>}
+            {adminMode && <div className="study-more"><button aria-label={`Options for ${item.title}`} aria-expanded={menuOpen === `material-${item.id}`} onClick={() => setMenuOpen(menuOpen === `material-${item.id}` ? '' : `material-${item.id}`)}>…</button>{menuOpen === `material-${item.id}` && <div className="study-more-menu"><button onClick={() => editMaterial(item)}>Edit or move</button><button className="danger" onClick={() => { setMenuOpen(''); remove('materials', item.id); }}>Delete</button></div>}</div>}
           </div>
         </article>;
       })}
@@ -230,6 +262,19 @@ export default function StudyLibraryPage({ adminMode = false }) {
         </div>}
       </article>)}
     </section>}</>}
+    {editTarget && <div className="study-modal study-edit-modal" role="dialog" aria-modal="true" aria-label={`Edit ${editTarget.type}`}><form className="study-modal-content study-edit-form" onSubmit={saveEdit}><div className="study-modal-header"><h2>{editTarget.type === 'folder' ? 'Edit or move folder' : 'Edit or move material'}</h2><button type="button" onClick={() => setEditTarget(null)} aria-label="Close editor">×</button></div><div className="study-edit-fields">
+      {editTarget.type === 'folder' ? <>
+        <label>Folder name<input required maxLength="80" value={editTarget.name} onChange={event => setEditTarget({ ...editTarget, name: event.target.value })} /></label>
+        <label>Location<select value={editTarget.parentId} onChange={event => setEditTarget({ ...editTarget, parentId: event.target.value })}><option value="">Top level</option>{folders.filter(folder => !isFolderOrDescendant(folder, editTarget.id)).map(folder => <option key={folder.id} value={folder.id}>{folderLabel(folder)}</option>)}</select></label>
+      </> : <>
+        <label>Title<input required maxLength="160" value={editTarget.title} onChange={event => setEditTarget({ ...editTarget, title: event.target.value })} /></label>
+        <label>Folder<select required value={editTarget.folderId} onChange={event => setEditTarget({ ...editTarget, folderId: event.target.value })}><option value="">Choose a folder</option>{folders.map(folder => <option key={folder.id} value={folder.id}>{folderLabel(folder)}</option>)}</select></label>
+        <label>Type<select value={editTarget.kind} onChange={event => setEditTarget({ ...editTarget, kind: event.target.value })}><option value="notes">Notes</option><option value="examples">Worked example</option></select></label>
+        <div className="study-fields"><label>Subject<input maxLength="80" value={editTarget.subject} onChange={event => setEditTarget({ ...editTarget, subject: event.target.value })} /></label><label>Grade or level<input maxLength="40" value={editTarget.grade} onChange={event => setEditTarget({ ...editTarget, grade: event.target.value })} /></label></div>
+        <label>Description<textarea maxLength="1000" value={editTarget.description} onChange={event => setEditTarget({ ...editTarget, description: event.target.value })} /></label>
+      </>}
+      <div className="study-edit-actions"><button type="button" className="study-cancel" onClick={() => setEditTarget(null)}>Cancel</button><button disabled={busy}>Save changes</button></div>
+    </div></form></div>}
     {preview && <div className="study-modal" role="dialog" aria-modal="true" aria-label={preview.title}><div className="study-modal-content"><div className="study-modal-header"><h2>{preview.title}</h2><button onClick={() => setPreview(null)} aria-label="Close material">×</button></div>{preview.mime === 'application/pdf' ? <iframe title={preview.title} src={preview.url} /> : <img src={preview.url} alt={preview.title} />}</div></div>}
   </main>;
 }
