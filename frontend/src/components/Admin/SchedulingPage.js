@@ -28,7 +28,8 @@ const appointmentWeeklyValue = (appointment, clients) => {
     const program = appointmentProgram(appointment, clients);
     if (program === 'stem') {
         const listedPrice = appointmentTypes.find(type => type.title === appointment.title)?.price;
-        const amount = Number(listedPrice ?? appointment.price);
+        const recordedPrice = Number(appointment.price);
+        const amount = recordedPrice > 0 ? recordedPrice : Number(listedPrice ?? 0);
         return Number.isFinite(amount) ? amount : 0;
     }
     const rate = program === 'club-z' ? 25 : program === 'above-beyond' ? 40 : 30;
@@ -74,6 +75,7 @@ const SchedulingPage = () => {
         time: '',
         endTime: '',
         description: '',
+        price: '',
         recurrence: '',
         occurrences: 1,
         weekdays: [],
@@ -225,6 +227,7 @@ const formatTime = (time) => {
             endTime,
             description,
             recurrence = '',
+            price,
             occurrences = 1,
             weekdays = []
         } = newAppointment;
@@ -240,6 +243,7 @@ const safeEndTime = endTime ? String(endTime) : "";
   end_time: safeEndTime,
   description,
   isAdmin: true,
+  price: price === '' ? undefined : Number(price),
   recurrence,
   occurrences,
   weekdays,
@@ -256,11 +260,14 @@ const safeEndTime = endTime ? String(endTime) : "";
   date,
   time: safeTime,
   end_time: safeEndTime,
-  client_id: clientId
+  client_id: clientId,
+  price: price === '' ? undefined : Number(price)
 };
 
     
-                const response = await axios.patch(`${apiUrl}/appointments/${editingAppointment.id}`, patchBody);
+                const response = await axios.patch(`${apiUrl}/appointments/${editingAppointment.id}`, patchBody, {
+                    headers: { Authorization: `Bearer ${localStorage.getItem('portalToken') || ''}` }
+                });
                 alert(`✅ Appointment updated successfully!`);
     
                 // Update local state
@@ -282,6 +289,7 @@ const safeEndTime = endTime ? String(endTime) : "";
                 time: '', 
                 endTime: '', 
                 description: '',
+                price: '',
                 recurrence: '',
                 occurrences: 1,
                 weekdays: [],
@@ -381,6 +389,7 @@ const safeEndTime = endTime ? String(endTime) : "";
             time: appointment.time,
             endTime: appointment.end_time,
             description: appointment.description,
+            price: Number(appointment.price) > 0 ? String(appointment.price) : '',
             recurrence: '',
             occurrences: 1,
             weekdays: [],
@@ -934,6 +943,19 @@ const safeEndTime = endTime ? String(endTime) : "";
                                 onChange={(e) => setNewAppointment({ ...newAppointment, description: e.target.value })}
                             />
                             </label>
+
+                            <label>
+                            Expected payout for this session ($):
+                            <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={newAppointment.price}
+                                onChange={(e) => setNewAppointment({ ...newAppointment, price: e.target.value })}
+                                placeholder="Use the listed appointment price"
+                            />
+                            </label>
+                            <small>For third party sessions such as Step Up, enter what you expect to earn. This does not mark the client as paid.</small>
 
                             <button type="submit">{editingAppointment ? 'Update Appointment' : 'Add Appointment'}</button>
                             <button

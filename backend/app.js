@@ -2499,7 +2499,19 @@ app.get('/blocked-times', async (req, res) => {
 
 app.patch('/appointments/:id', async (req, res) => {
     const appointmentId = req.params.id;
-    const { title, description, date, time, end_time, client_id } = req.body;
+    const { title, description, date, time, end_time, client_id, price } = req.body;
+    const expectedPayout = price === undefined ? null : Number(price);
+    if (expectedPayout !== null && (!Number.isFinite(expectedPayout) || expectedPayout < 0)) {
+        return res.status(400).json({ error: 'Expected payout must be a nonnegative amount.' });
+    }
+    if (expectedPayout !== null) {
+        try {
+            const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+            const payload = jwt.verify(token, portalTokenSecret);
+            const user = await pool.query('SELECT role FROM users WHERE id = $1 LIMIT 1', [payload.userId]);
+            if (user.rows[0]?.role !== 'admin') return res.status(403).json({ error: 'Admin account required to set payout.' });
+        } catch { return res.status(401).json({ error: 'Please sign in again to set payout.' }); }
+    }
 
     try {
         // Check if the appointment exists
@@ -2513,17 +2525,24 @@ app.patch('/appointments/:id', async (req, res) => {
         }
 
         const existingAppointment = existingAppointmentResult.rows[0];
+        const scheduleChanged = title !== existingAppointment.title || description !== existingAppointment.description ||
+          String(date).slice(0, 10) !== new Date(existingAppointment.date).toISOString().slice(0, 10) ||
+          String(time).slice(0, 5) !== String(existingAppointment.time).slice(0, 5) ||
+          String(end_time || '').slice(0, 5) !== String(existingAppointment.end_time || '').slice(0, 5) ||
+          Number(client_id) !== Number(existingAppointment.client_id);
 
         // Update the appointment
         const result = await pool.query(
             `UPDATE appointments 
-             SET title = $1, description = $2, date = $3, time = $4, end_time = $5, client_id = $6 
+             SET title = $1, description = $2, date = $3, time = $4, end_time = $5, client_id = $6,
+                 price = COALESCE($8, price)
              WHERE id = $7 
              RETURNING *`,
-            [title, description, date, time, end_time, client_id, appointmentId]
+            [title, description, date, time, end_time, client_id, appointmentId, expectedPayout]
         );
 
         const updatedAppointment = result.rows[0];
+        if (!scheduleChanged) return res.status(200).json(updatedAppointment);
 
         // ✅ Update Google event if linked
 try {
