@@ -171,9 +171,10 @@ const ClientPortalPage = () => {
 
   const refreshAppointments = async () => {
     try {
-      const apptRes = await fetch(`${apiUrl}/client/appointments`, {
-        headers: authHeaders,
-      });
+      const [apptRes, packageRes] = await Promise.all([
+        fetch(`${apiUrl}/client/appointments`, { headers: authHeaders }),
+        fetch(`${apiUrl}/client/packages`, { headers: authHeaders }),
+      ]);
 
       if (!apptRes.ok) {
         const t = await apptRes.text();
@@ -182,9 +183,16 @@ const ClientPortalPage = () => {
 
       const apptData = await apptRes.json();
       setAppointments(Array.isArray(apptData) ? apptData : []);
+      if (packageRes.ok) setPackages(await packageRes.json());
     } catch (e) {
       setErr(e.message || "Failed to refresh appointments.");
     }
+  };
+
+  const paymentText = (appointment) => {
+    if (appointment?.paid && Number(appointment?.price) > 0) return `Paid $${Number(appointment.price).toFixed(2)}`;
+    if (/SCHEDULING/i.test(appointment?.title || "")) return "Included in package";
+    return "";
   };
 
   const onCancel = async (appt) => {
@@ -470,6 +478,7 @@ const ClientPortalPage = () => {
                       <div key={a.id} className="appointment-card-portal">
                         <div className="appt-main">
                           <span className="appt-badge">Upcoming</span>
+                          {paymentText(a) && <span className="appt-payment">{paymentText(a)}</span>}
                           <h3>{a.title || "Appointment"}</h3>
 
                           <p>
@@ -538,6 +547,7 @@ const ClientPortalPage = () => {
                     <div key={a.id} className="appointment-card-portal past">
                       <div className="appt-main">
                         <span className="appt-badge muted">Completed</span>
+                        {paymentText(a) && <span className="appt-payment">{paymentText(a)}</span>}
                         <h3>{a.title || "Appointment"}</h3>
 
                         <p>

@@ -2748,7 +2748,7 @@ const loadPackagePurchases = async (db, clientId) => {
     total integer NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now()
   )`);
-  const appointments = await db.query('SELECT id, title, paid, price FROM appointments WHERE client_id = $1', [clientId]);
+  const appointments = await db.query('SELECT id, title, paid, price, date, time, end_time FROM appointments WHERE client_id = $1', [clientId]);
   for (const appt of appointments.rows) {
     const details = packageDetails(appt.title);
     if (!details || !appt.paid || Number(appt.price) <= 0 || /SCHEDULING/i.test(appt.title)) continue;
@@ -2797,6 +2797,31 @@ app.get('/client/packages', async (req, res) => {
     const data = await loadPackagePurchases(pool, client.rows[0].id);
     return res.json(packageBalances(data.purchases, data.appointments));
   } catch (error) { console.error('Package balance failed:', error); return res.status(500).json({ error: 'Could not load packages.' }); }
+});
+
+app.get('/admin/clients/:clientId/portal-preview', async (req, res) => {
+  try {
+    const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const payload = jwt.verify(token, portalTokenSecret);
+    const user = await pool.query('SELECT role FROM users WHERE id = $1 LIMIT 1', [payload.userId]);
+    if (user.rows[0]?.role !== 'admin') return res.status(403).json({ error: 'Admin account required.' });
+  } catch { return res.status(401).json({ error: 'Please sign in again.' }); }
+
+  const clientId = Number(req.params.clientId);
+  if (!Number.isSafeInteger(clientId) || clientId <= 0) return res.status(400).json({ error: 'Invalid client.' });
+  try {
+    const clientResult = await pool.query(`SELECT c.id, c.full_name, c.email, c.phone, c.category, c.user_id, u.username
+      FROM clients c LEFT JOIN users u ON u.id = c.user_id WHERE c.id = $1 LIMIT 1`, [clientId]);
+    if (!clientResult.rowCount) return res.status(404).json({ error: 'Client not found.' });
+    const appointmentResult = await pool.query(`SELECT id, title, description, date, time, end_time, paid, price
+      FROM appointments WHERE client_id = $1 ORDER BY date, time`, [clientId]);
+    const packageData = await loadPackagePurchases(pool, clientId);
+    return res.json({ client: clientResult.rows[0], appointments: appointmentResult.rows,
+      packages: packageBalances(packageData.purchases, packageData.appointments) });
+  } catch (error) {
+    console.error('Admin client portal preview failed:', error);
+    return res.status(500).json({ error: 'Could not load the client portal preview.' });
+  }
 });
 
 app.post('/client/packages/book', async (req, res) => {

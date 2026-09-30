@@ -271,7 +271,9 @@ const safeEndTime = endTime ? String(endTime) : "";
   time: safeTime,
   end_time: safeEndTime,
   client_id: clientId,
-  price: price === '' ? undefined : Number(price),
+  ...(Number(price || 0) !== Number(editingAppointment.price || 0)
+    ? { price: price === '' ? 0 : Number(price) }
+    : {}),
   send_notification: notifyClient,
 };
 
@@ -310,7 +312,7 @@ const safeEndTime = endTime ? String(endTime) : "";
             setShowAppointmentModal(false);
         } catch (err) {
             console.error("❌ Error saving appointment:", err);
-            alert('Error saving appointment.');
+            alert(err?.response?.data?.error || 'Error saving appointment.');
         }
     };
     

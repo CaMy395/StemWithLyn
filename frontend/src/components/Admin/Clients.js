@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { FaCheckCircle, FaEdit, FaEnvelope, FaPhone, FaPlus, FaSearch, FaTimes, FaTrash, FaUser, FaUserLock, FaUsers } from "react-icons/fa";
+import { FaCalendarAlt, FaCheckCircle, FaEdit, FaEnvelope, FaEye, FaPhone, FaPlus, FaSearch, FaTimes, FaTrash, FaUser, FaUserLock, FaUsers } from "react-icons/fa";
 
 const emptyClient = { full_name: "", email: "", phone: "", category: "StemwithLyn" };
 const categories = ["StemwithLyn", "United Mentors", "BWLA", "Above & Beyond Learning", "Club Z"];
@@ -17,6 +17,28 @@ const Clients = () => {
   const [message, setMessage] = useState({ type: "", text: "" });
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All");
+  const [portalPreview, setPortalPreview] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  const formatDateTime = (appointment) => {
+    const date = String(appointment?.date || "").slice(0, 10);
+    const time = String(appointment?.time || "00:00").slice(0, 5);
+    if (!date) return "Date unavailable";
+    return new Date(`${date}T${time}:00`).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  };
+
+  const openPortalPreview = async (client) => {
+    setPreviewLoading(true); setMessage({ type: "", text: "" });
+    try {
+      const response = await fetch(`${apiUrl}/admin/clients/${client.id}/portal-preview`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("portalToken") || ""}` },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || "Could not load portal preview.");
+      setPortalPreview(data);
+    } catch (error) { setMessage({ type: "error", text: error.message || "Could not load portal preview." }); }
+    finally { setPreviewLoading(false); }
+  };
 
   const fetchClients = useCallback(async () => {
     setLoading(true);
@@ -103,9 +125,21 @@ const Clients = () => {
       <div className="clients-tools"><label className="clients-search"><FaSearch /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, email, phone, or organization…" /></label><select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="All">All organizations</option>{categories.map((category) => <option key={category}>{category}</option>)}</select></div>
       <div className="clients-results-label"><strong>{filteredClients.length}</strong> {filteredClients.length === 1 ? "client" : "clients"}{query || categoryFilter !== "All" ? " found" : ""}</div>
 
-      {loading ? <div className="clients-empty"><span className="clients-spinner" /><strong>Loading clients…</strong></div> : filteredClients.length === 0 ? <div className="clients-empty"><FaUsers /><strong>No clients found</strong><span>{clients.length ? "Try changing your search or filter." : "Add your first client to get started."}</span></div> : <div className="clients-table-wrap"><table className="clients-table"><thead><tr><th>Client</th><th>Contact</th><th>Organization</th><th>Portal access</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{filteredClients.map((client) => <tr key={client.id}><td><div className="client-identity"><span className="client-avatar">{initials(client.full_name)}</span><div><strong>{client.full_name || "Unnamed client"}</strong><small>Client #{client.id}</small></div></div></td><td><div className="client-contact">{client.email ? <a href={`mailto:${client.email}`}><FaEnvelope /> {client.email}</a> : <span className="missing">No email</span>}{client.phone ? <a href={`tel:${client.phone}`}><FaPhone /> {client.phone}</a> : <span className="missing">No phone</span>}</div></td><td><span className="category-pill">{client.category || "Unassigned"}</span></td><td>{client.user_id ? <span className="portal-status linked"><FaCheckCircle /> {client.username || 'Linked'}{client.username && <small>Username</small>}</span> : <button className="portal-action" disabled={busyId === client.id} onClick={() => createLogin(client)}><FaUserLock /> {busyId === client.id ? "Creating…" : "Create login"}</button>}</td><td><div className="client-actions"><button onClick={() => openForm(client)} aria-label={`Edit ${client.full_name}`}><FaEdit /></button><button className="danger" disabled={busyId === client.id} onClick={() => deleteClient(client)} aria-label={`Delete ${client.full_name}`}><FaTrash /></button></div></td></tr>)}</tbody></table></div>}
+      {loading ? <div className="clients-empty"><span className="clients-spinner" /><strong>Loading clients…</strong></div> : filteredClients.length === 0 ? <div className="clients-empty"><FaUsers /><strong>No clients found</strong><span>{clients.length ? "Try changing your search or filter." : "Add your first client to get started."}</span></div> : <div className="clients-table-wrap"><table className="clients-table"><thead><tr><th>Client</th><th>Contact</th><th>Organization</th><th>Portal access</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{filteredClients.map((client) => <tr key={client.id}><td><div className="client-identity"><span className="client-avatar">{initials(client.full_name)}</span><div><strong>{client.full_name || "Unnamed client"}</strong><small>Client #{client.id}</small></div></div></td><td><div className="client-contact">{client.email ? <a href={`mailto:${client.email}`}><FaEnvelope /> {client.email}</a> : <span className="missing">No email</span>}{client.phone ? <a href={`tel:${client.phone}`}><FaPhone /> {client.phone}</a> : <span className="missing">No phone</span>}</div></td><td><span className="category-pill">{client.category || "Unassigned"}</span></td><td>{client.user_id ? <span className="portal-status linked"><FaCheckCircle /> {client.username || 'Linked'}{client.username && <small>Username</small>}</span> : <button className="portal-action" disabled={busyId === client.id} onClick={() => createLogin(client)}><FaUserLock /> {busyId === client.id ? "Creating…" : "Create login"}</button>}</td><td><div className="client-actions"><button disabled={previewLoading} onClick={() => openPortalPreview(client)} aria-label={`View ${client.full_name}'s portal`} title="View client portal"><FaEye /></button><button onClick={() => openForm(client)} aria-label={`Edit ${client.full_name}`}><FaEdit /></button><button className="danger" disabled={busyId === client.id} onClick={() => deleteClient(client)} aria-label={`Delete ${client.full_name}`}><FaTrash /></button></div></td></tr>)}</tbody></table></div>}
     </section>
 
+    {portalPreview && <div className="client-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPortalPreview(null); }}>
+      <section className="client-modal portal-preview-modal" role="dialog" aria-modal="true" aria-labelledby="portal-preview-title">
+        <div className="client-modal-header"><div><span>CLIENT VIEW</span><h2 id="portal-preview-title">{portalPreview.client.full_name}'s portal</h2></div><button onClick={() => setPortalPreview(null)} aria-label="Close"><FaTimes /></button></div>
+        <div className="portal-preview-body">
+          <div className="portal-preview-account"><strong>{portalPreview.client.username ? `Username: ${portalPreview.client.username}` : "No portal login linked"}</strong><span>{portalPreview.client.email || "No email"}</span></div>
+          <h3>Package credits</h3>
+          {portalPreview.packages.length ? portalPreview.packages.map((item) => <div className="preview-package" key={item.key}><span>{item.title.replace(" - SCHEDULING", "")}</span><strong>{item.remaining} of {item.purchased} left</strong><small>{item.booked} session{item.booked === 1 ? "" : "s"} booked or completed</small></div>) : <p className="preview-empty">No tutoring package purchase found.</p>}
+          <h3><FaCalendarAlt /> Appointment history and schedule</h3>
+          {portalPreview.appointments.length ? <div className="preview-appointments">{[...portalPreview.appointments].reverse().map((appointment) => { const isPast = new Date(`${String(appointment.date).slice(0, 10)}T${String(appointment.time).slice(0, 5)}:00`) < new Date(); const paid = appointment.paid && Number(appointment.price) > 0; return <article key={appointment.id}><div><strong>{appointment.title}</strong><span>{formatDateTime(appointment)}{appointment.end_time ? ` – ${String(appointment.end_time).slice(0, 5)}` : ""}</span></div><div className="preview-status"><span>{isPast ? "Past" : "Upcoming"}</span>{paid ? <b>Paid {Number(appointment.price).toLocaleString("en-US", { style: "currency", currency: "USD" })}</b> : /SCHEDULING/i.test(appointment.title || "") ? <b>Package session</b> : null}</div></article>; })}</div> : <p className="preview-empty">No appointments are linked to this client.</p>}
+        </div>
+      </section>
+    </div>}
     {showForm && <div className="client-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowForm(false); }}><section className="client-modal" role="dialog" aria-modal="true" aria-labelledby="client-form-title"><div className="client-modal-header"><div><span>{editClient ? "UPDATE RECORD" : "NEW RECORD"}</span><h2 id="client-form-title">{editClient ? "Edit client" : "Add a client"}</h2></div><button onClick={() => setShowForm(false)} aria-label="Close"><FaTimes /></button></div><form onSubmit={saveClient}><div className="client-form-grid"><label className="wide"><span>Full name *</span><input value={clientForm.full_name} onChange={(event) => setClientForm({ ...clientForm, full_name: event.target.value })} placeholder="First and last name" required autoFocus /></label><label><span>Email address</span><input type="email" value={clientForm.email} onChange={(event) => setClientForm({ ...clientForm, email: event.target.value })} placeholder="client@example.com" /></label><label><span>Phone number</span><input type="tel" value={clientForm.phone} onChange={(event) => setClientForm({ ...clientForm, phone: event.target.value })} placeholder="(555) 123-4567" /></label><label className="wide"><span>Organization</span><select value={clientForm.category} onChange={(event) => setClientForm({ ...clientForm, category: event.target.value })}>{categories.map((category) => <option key={category}>{category}</option>)}</select></label></div><div className="client-modal-actions"><button type="button" className="secondary" onClick={() => setShowForm(false)}>Cancel</button><button type="submit" disabled={saving}>{saving ? "Saving…" : editClient ? "Save changes" : "Add client"}</button></div></form></section></div>}
   </main>;
 };
