@@ -534,14 +534,27 @@ const safeEndTime = endTime ? String(endTime) : "";
                                     const dayString = date.toISOString().split('T')[0];
                                     const holiday = holidays.find(h => h.date === dayString);
 
-                                    // Filter appointments for this hour
-                                    const appointmentsAtTime = appointments.filter((appointment) => {
+                                    // Render the part of each appointment that falls within this hour.
+                                    // Splitting it by hour prevents a :30 appointment from being clipped by the next table row.
+                                    const appointmentEntriesAtTime = appointments.flatMap((appointment) => {
                                         const normalizedDate = new Date(appointment.date).toISOString().split('T')[0];
-                                        const [appointmentHour] = appointment.time.split(':').map(Number);
-                                        return (
-                                            normalizedDate === dayString &&
-                                            appointmentHour === hour
-                                        );
+                                        if (normalizedDate !== dayString) return [];
+                                        const [startHour, startMinute = 0] = String(appointment.time || '').split(':').map(Number);
+                                        const [endHour, endMinute = 0] = String(appointment.end_time || '').split(':').map(Number);
+                                        const appointmentStart = startHour * 60 + startMinute;
+                                        const appointmentEnd = endHour * 60 + endMinute;
+                                        const slotStart = hour * 60;
+                                        const segmentStart = Math.max(appointmentStart, slotStart);
+                                        const segmentEnd = Math.min(appointmentEnd, slotStart + 60);
+                                        if (!Number.isFinite(appointmentStart) || !Number.isFinite(appointmentEnd) || segmentEnd <= segmentStart) return [];
+                                        return [{
+                                            ...appointment,
+                                            segmentStart,
+                                            segmentEnd,
+                                            slotStart,
+                                            firstSegment: appointmentStart >= slotStart,
+                                            lastSegment: appointmentEnd <= slotStart + 60,
+                                        }];
                                     });
                                     
                                     const blockedEntriesAtTime = blockedTimes.flatMap((b) => {
@@ -626,31 +639,31 @@ const safeEndTime = endTime ? String(endTime) : "";
                                             <div>
                                                 
                                                 {/* Render appointments */}
-                                                {appointmentsAtTime.map((appointment, index) => {
-                                                    const startTime = new Date(`${appointment.date}T${appointment.time}`);
-                                                    const endTime = new Date(`${appointment.date}T${appointment.end_time}`);
-                                                    const durationInMinutes = (endTime - startTime) / (1000 * 60); // Duration in minutes
-                                                    const startMinutes = startTime.getMinutes();
-                                                    const topPercentage = (startMinutes / 60) * 100; // Calculate top offset
-
+                                                {appointmentEntriesAtTime.map((appointment, index) => {
+                                                    const topPercentage = ((appointment.segmentStart - appointment.slotStart) / 60) * 100;
+                                                    const heightPercentage = ((appointment.segmentEnd - appointment.segmentStart) / 60) * 100;
                                                     return (
                                                         <div
-                                                            key={appointment.id}
+                                                            key={`${appointment.id}-${hour}`}
                                                             className={`event appointment program-${appointmentProgram(appointment, clients)} ${index > 0 ? 'overlapping' : ''}`}
                                                             draggable
                                                             onDragStart={(e) => {
                                                                 e.dataTransfer.setData('appointmentId', appointment.id);
                                                             }}
+                                                            onClick={(event) => event.stopPropagation()}
                                                             style={{
                                                                 position: 'absolute',
                                                                 top: `${topPercentage}%`,
-                                                                height: `${(durationInMinutes / 60) * 100}%`,
+                                                                height: `${heightPercentage}%`,
                                                                 padding: '2px',
+                                                                zIndex: 4,
+                                                                boxSizing: 'border-box',
+                                                                borderRadius: appointment.firstSegment && appointment.lastSegment ? '6px' : appointment.firstSegment ? '6px 6px 0 0' : appointment.lastSegment ? '0 0 6px 6px' : 0,
                                                                 cursor: 'grab', // show hand cursor
                                                             }}
                                                         >
 
-{clients.find((c) => Number(c.id) === Number(appointment.client_id))?.full_name || 'Unknown'} - {appointment.title}
+{appointment.firstSegment ? `${clients.find((c) => Number(c.id) === Number(appointment.client_id))?.full_name || 'Unknown'} - ${appointment.title}` : ''}
                                                     
                                                         </div>
                                                     );
