@@ -645,7 +645,7 @@ const safeEndTime = endTime ? String(endTime) : "";
                                                     return (
                                                         <div
                                                             key={`${appointment.id}-${hour}`}
-                                                            className={`event appointment program-${appointmentProgram(appointment, clients)} ${index > 0 ? 'overlapping' : ''}`}
+                                                            className={`event appointment program-${appointmentProgram(appointment, clients)} ${appointment.firstSegment ? 'segment-start' : 'segment-continuation'} ${appointment.lastSegment ? 'segment-end' : 'segment-continues'} ${index > 0 ? 'overlapping' : ''}`}
                                                             draggable
                                                             onDragStart={(e) => {
                                                                 e.dataTransfer.setData('appointmentId', appointment.id);
@@ -653,8 +653,8 @@ const safeEndTime = endTime ? String(endTime) : "";
                                                             onClick={(event) => event.stopPropagation()}
                                                             style={{
                                                                 position: 'absolute',
-                                                                top: `${topPercentage}%`,
-                                                                height: `${heightPercentage}%`,
+                                                                top: appointment.firstSegment ? `${topPercentage}%` : '-1px',
+                                                                height: appointment.firstSegment ? `${heightPercentage}%` : `calc(${heightPercentage}% + 1px)`,
                                                                 padding: '2px',
                                                                 zIndex: 4,
                                                                 boxSizing: 'border-box',
