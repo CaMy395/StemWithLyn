@@ -14,6 +14,13 @@ const toDateKey = (value) => {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
 
+const clockMinutes = (value) => {
+    const [hours, minutes] = String(value || '').split(':').map(Number);
+    return Number.isFinite(hours) && Number.isFinite(minutes) ? hours * 60 + minutes : null;
+};
+
+const clockTime = (minutes) => `${String(Math.floor(minutes / 60) % 24).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+
 const appointmentProgram = (appointment, clients) => {
     const category = appointment.client_category || clients.find(client => Number(client.id) === Number(appointment.client_id))?.category || '';
     const value = category.toLowerCase();
@@ -310,14 +317,22 @@ const safeEndTime = endTime ? String(endTime) : "";
           const appt = appointments.find((a) => a.id === parseInt(appointmentId, 10));
           if (!appt) return;
       
-          const formattedNewTime = `${newHour.toString().padStart(2, '0')}:00`;
+          const oldStart = clockMinutes(appt.time);
+          const oldEnd = clockMinutes(appt.end_time);
+          const duration = oldStart !== null && oldEnd !== null && oldEnd > oldStart ? oldEnd - oldStart : 60;
+          const originalMinute = oldStart === null ? 0 : oldStart % 60;
+          const newStart = newHour * 60 + originalMinute;
+          const newEnd = newStart + duration;
+          if (newEnd >= 24 * 60) throw new Error('The appointment would extend past midnight.');
+          const formattedNewTime = clockTime(newStart);
+          const formattedNewEndTime = clockTime(newEnd);
       
           await axios.patch(`${apiUrl}/appointments/${appt.id}`, {
             title: appt.title,
             description: appt.description,
             date: newDate,
             time: formattedNewTime,
-            end_time: appt.end_time,
+            end_time: formattedNewEndTime,
             client_id: appt.client_id,
           });
       

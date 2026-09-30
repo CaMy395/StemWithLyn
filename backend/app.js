@@ -2500,6 +2500,12 @@ app.get('/blocked-times', async (req, res) => {
 app.patch('/appointments/:id', async (req, res) => {
     const appointmentId = req.params.id;
     const { title, description, date, time, end_time, client_id, price } = req.body;
+    const requestedStart = timeToMinutes(time);
+    const requestedEnd = timeToMinutes(end_time);
+    if (end_time && (!Number.isFinite(requestedStart) || !Number.isFinite(requestedEnd) ||
+        requestedEnd <= requestedStart || requestedEnd - requestedStart > 6 * 60)) {
+        return res.status(400).json({ error: 'Choose an end time after the start time. Appointments cannot exceed 6 hours.' });
+    }
     const expectedPayout = price === undefined ? null : Number(price);
     if (expectedPayout !== null && (!Number.isFinite(expectedPayout) || expectedPayout < 0)) {
         return res.status(400).json({ error: 'Expected payout must be a nonnegative amount.' });
