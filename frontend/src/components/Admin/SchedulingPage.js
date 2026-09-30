@@ -243,6 +243,13 @@ const formatTime = (time) => {
     const safeTime = time ? String(time) : "";
 const safeEndTime = endTime ? String(endTime) : "";
 
+        const startMinutes = clockMinutes(safeTime);
+        const endMinutes = clockMinutes(safeEndTime);
+        if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes || endMinutes - startMinutes > 6 * 60) {
+            alert('Choose an end time after the start time. Appointments cannot exceed 6 hours.');
+            return;
+        }
+
         const baseAppointment = {
   title,
   client_id: clientId,
@@ -912,7 +919,21 @@ const safeEndTime = endTime ? String(endTime) : "";
                             <input
                                 type="time"
                                 value={newAppointment.time}
-                                onChange={(e) => setNewAppointment({ ...newAppointment, time: e.target.value })}
+                                onChange={(e) => {
+                                    const nextTime = e.target.value;
+                                    const previousStart = clockMinutes(newAppointment.time);
+                                    const previousEnd = clockMinutes(newAppointment.endTime);
+                                    const duration = previousStart !== null && previousEnd !== null && previousEnd > previousStart
+                                        ? previousEnd - previousStart
+                                        : 60;
+                                    const nextStart = clockMinutes(nextTime);
+                                    const nextEnd = nextStart === null ? null : nextStart + duration;
+                                    setNewAppointment({
+                                        ...newAppointment,
+                                        time: nextTime,
+                                        endTime: nextEnd !== null && nextEnd < 24 * 60 ? clockTime(nextEnd) : '',
+                                    });
+                                }}
                                 required
                             />
                             </label>
@@ -923,6 +944,7 @@ const safeEndTime = endTime ? String(endTime) : "";
                                 type="time"
                                 value={newAppointment.endTime}
                                 onChange={(e) => setNewAppointment({ ...newAppointment, endTime: e.target.value })}
+                                required
                             />
                             </label>
 

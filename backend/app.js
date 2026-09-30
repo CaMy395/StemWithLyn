@@ -2110,6 +2110,12 @@ app.post('/appointments', async (req, res) => {
 
     const formattedTime = normalizeTime(time);
     const formattedEndTime = normalizeTime(end_time);
+    const requestedStart = timeToMinutes(formattedTime);
+    const requestedEnd = timeToMinutes(formattedEndTime);
+    if (!formattedEndTime || !Number.isFinite(requestedStart) || !Number.isFinite(requestedEnd) ||
+        requestedEnd <= requestedStart || requestedEnd - requestedStart > 6 * 60) {
+      return res.status(400).json({ error: 'Choose an end time after the start time. Appointments cannot exceed 6 hours.' });
+    }
 
     // ----------------------------
     // Upsert client by email
