@@ -85,7 +85,7 @@ function computeEndTimeSafe(dateOnly, startHHMMSS, endHHMMSS) {
   return d.toTimeString().slice(0, 8);
 }
 
-async function createGoogleCalendarEventAndStore(appt, client) {
+async function createGoogleCalendarEventAndStore(appt, client, sendNotifications = true) {
   const dateOnly = toDateOnly(appt.date);
   const start = toTimeSeconds(appt.time);
   const end = computeEndTimeSafe(dateOnly, start, toTimeSeconds(appt.end_time));
@@ -108,7 +108,7 @@ async function createGoogleCalendarEventAndStore(appt, client) {
     const resp = await calendar.events.insert({
       calendarId: process.env.GOOGLE_CALENDAR_ID,
       resource: event,
-      sendUpdates: client?.email ? "all" : "none", // ✅ avoid weirdness when no attendees
+      sendUpdates: sendNotifications && client?.email ? "all" : "none",
     });
 
     await pool.query(
@@ -127,7 +127,7 @@ async function createGoogleCalendarEventAndStore(appt, client) {
   }
 }
 
-async function updateGoogleCalendarEvent(appt, client) {
+async function updateGoogleCalendarEvent(appt, client, sendNotifications = true) {
   if (!appt.google_event_id) return;
 
   const dateOnly = toDateOnly(appt.date);
@@ -144,7 +144,7 @@ async function updateGoogleCalendarEvent(appt, client) {
     await calendar.events.patch({
       calendarId: process.env.GOOGLE_CALENDAR_ID,
       eventId: appt.google_event_id,
-      sendUpdates: client?.email ? "all" : "none",
+      sendUpdates: sendNotifications && client?.email ? "all" : "none",
       resource: {
         summary: appt.title || "Appointment",
         description: appt.description || "",
@@ -2069,7 +2069,9 @@ app.post('/appointments', async (req, res) => {
 
       // admin flag
       isAdmin = false,
+      send_notification = false,
     } = req.body;
+    const shouldNotifyClient = isAdmin ? send_notification === true : true;
 
     // ----------------------------
     // Validate minimum required fields
@@ -2310,7 +2312,7 @@ app.post('/appointments', async (req, res) => {
       for (const appt of created) {
         // Only create if missing (prevents duplicates if re-hit)
         if (!appt.google_event_id) {
-          await createGoogleCalendarEventAndStore(appt, clientRow);
+          await createGoogleCalendarEventAndStore(appt, clientRow, shouldNotifyClient);
         }
       }
     } catch (e) {
@@ -2322,7 +2324,7 @@ app.post('/appointments', async (req, res) => {
     // - only for client flow (not admin)
     // - idempotent-ish (won't double-send on retries if appt_email_sent exists)
     // ----------------------------
-    if (!isAdmin) {
+    if (!isAdmin || shouldNotifyClient) {
       try {
         const first = created[0];
         let alreadySent = false;
@@ -2499,7 +2501,8 @@ app.get('/blocked-times', async (req, res) => {
 
 app.patch('/appointments/:id', async (req, res) => {
     const appointmentId = req.params.id;
-    const { title, description, date, time, end_time, client_id, price } = req.body;
+    const { title, description, date, time, end_time, client_id, price, send_notification = false } = req.body;
+    const shouldNotifyClient = send_notification === true;
     const requestedStart = timeToMinutes(time);
     const requestedEnd = timeToMinutes(end_time);
     if (end_time && (!Number.isFinite(requestedStart) || !Number.isFinite(requestedEnd) ||
@@ -2510,13 +2513,13 @@ app.patch('/appointments/:id', async (req, res) => {
     if (expectedPayout !== null && (!Number.isFinite(expectedPayout) || expectedPayout < 0)) {
         return res.status(400).json({ error: 'Expected payout must be a nonnegative amount.' });
     }
-    if (expectedPayout !== null) {
+    if (expectedPayout !== null || shouldNotifyClient) {
         try {
             const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
             const payload = jwt.verify(token, portalTokenSecret);
             const user = await pool.query('SELECT role FROM users WHERE id = $1 LIMIT 1', [payload.userId]);
-            if (user.rows[0]?.role !== 'admin') return res.status(403).json({ error: 'Admin account required to set payout.' });
-        } catch { return res.status(401).json({ error: 'Please sign in again to set payout.' }); }
+            if (user.rows[0]?.role !== 'admin') return res.status(403).json({ error: 'Admin account required for this update.' });
+        } catch { return res.status(401).json({ error: 'Please sign in again to complete this update.' }); }
     }
 
     try {
@@ -2563,7 +2566,7 @@ try {
 
   if (apptRes.rowCount > 0) {
     const appt = apptRes.rows[0];
-    await updateGoogleCalendarEvent(appt, { email: appt.email });
+    await updateGoogleCalendarEvent(appt, { email: appt.email }, shouldNotifyClient);
   }
 } catch (e) {
   console.error("❌ Google calendar update failed:", e?.message || e);
@@ -2593,7 +2596,7 @@ try {
             description: updatedAppointment.description,
         };
         
-        await sendTutoringRescheduleEmail(rescheduleDetails);
+        if (shouldNotifyClient) await sendTutoringRescheduleEmail(rescheduleDetails);
 
         // Send success response
         return res.status(200).json(updatedAppointment);

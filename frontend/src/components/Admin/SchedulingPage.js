@@ -83,6 +83,7 @@ const SchedulingPage = () => {
         endTime: '',
         description: '',
         price: '',
+        notifyClient: false,
         recurrence: '',
         occurrences: 1,
         weekdays: [],
@@ -235,6 +236,7 @@ const formatTime = (time) => {
             description,
             recurrence = '',
             price,
+            notifyClient = false,
             occurrences = 1,
             weekdays = []
         } = newAppointment;
@@ -251,6 +253,7 @@ const safeEndTime = endTime ? String(endTime) : "";
   description,
   isAdmin: true,
   price: price === '' ? undefined : Number(price),
+  send_notification: notifyClient,
   recurrence,
   occurrences,
   weekdays,
@@ -268,7 +271,8 @@ const safeEndTime = endTime ? String(endTime) : "";
   time: safeTime,
   end_time: safeEndTime,
   client_id: clientId,
-  price: price === '' ? undefined : Number(price)
+  price: price === '' ? undefined : Number(price),
+  send_notification: notifyClient,
 };
 
     
@@ -297,6 +301,7 @@ const safeEndTime = endTime ? String(endTime) : "";
                 endTime: '', 
                 description: '',
                 price: '',
+                notifyClient: false,
                 recurrence: '',
                 occurrences: 1,
                 weekdays: [],
@@ -405,6 +410,7 @@ const safeEndTime = endTime ? String(endTime) : "";
             endTime: appointment.end_time,
             description: appointment.description,
             price: Number(appointment.price) > 0 ? String(appointment.price) : '',
+            notifyClient: false,
             recurrence: '',
             occurrences: 1,
             weekdays: [],
@@ -597,6 +603,8 @@ const safeEndTime = endTime ? String(endTime) : "";
                                                     time: `${hour.toString().padStart(2, '0')}:00`,
                                                     endTime: '',
                                                     description: '',
+                                                    price: '',
+                                                    notifyClient: false,
                                                     recurrence: '',
                                                     occurrences: 1,
                                                     weekdays: [],
@@ -786,6 +794,8 @@ const safeEndTime = endTime ? String(endTime) : "";
                                         time: '',
                                         endTime: '',
                                         description: '',
+                                        price: '',
+                                        notifyClient: false,
                                         recurrence: '',
                                         occurrences: 1,
                                         weekdays: [],
@@ -984,6 +994,16 @@ const safeEndTime = endTime ? String(endTime) : "";
                             />
                             </label>
                             <small>For third party sessions such as Step Up, enter what you expect to earn. This does not mark the client as paid.</small>
+
+                            <label className="block-all-day">
+                                <input
+                                    type="checkbox"
+                                    checked={Boolean(newAppointment.notifyClient)}
+                                    onChange={(e) => setNewAppointment({ ...newAppointment, notifyClient: e.target.checked })}
+                                />
+                                Send email and calendar notification to client
+                            </label>
+                            <small>Leave this unchecked for internal corrections or updates that do not require a client notification.</small>
 
                             <button type="submit">{editingAppointment ? 'Update Appointment' : 'Add Appointment'}</button>
                             <button
