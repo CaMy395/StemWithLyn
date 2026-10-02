@@ -14,6 +14,8 @@ const AdminAvailabilityPage = () => {
 
   const [editingId, setEditingId] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [applyingPreset, setApplyingPreset] = useState(false);
+  const [notice, setNotice] = useState("");
 
   const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:3001";
 
@@ -58,6 +60,17 @@ const AdminAvailabilityPage = () => {
     setEndTime("");
     setAppointmentType("");
     setEditingId(null);
+  };
+
+  const applyStandardHours = async () => {
+    if (!window.confirm("Apply 8–10 AM and 3–10 PM to every service, Monday through Sunday? This replaces the current weekly hours.")) return;
+    try {
+      setApplyingPreset(true); setNotice("");
+      const { data } = await axios.post(`${apiUrl}/admin-availability/standard-hours`, { appointment_types: appointmentTypes.map((item) => item.title) });
+      setNotice(`Standard hours applied: ${data.slots} availability windows across all services.`);
+      await fetchAvailability();
+    } catch (error) { alert(error.response?.data?.error || "Could not apply standard hours."); }
+    finally { setApplyingPreset(false); }
   };
 
   const addAvailability = async () => {
@@ -157,6 +170,8 @@ const AdminAvailabilityPage = () => {
   return (
     <main className="admin-availability availability-workspace">
       <header className="availability-header"><div><span>ADMIN WORKSPACE</span><h1>Availability</h1><p>Control which services clients can book each week.</p></div></header>
+      <section className="availability-preset"><div><span>STANDARD WEEKLY HOURS</span><h2>8–10 AM and 3–10 PM</h2><p>Apply these two booking windows to every service for all seven days.</p></div><button onClick={applyStandardHours} disabled={applyingPreset}>{applyingPreset ? "Applying…" : "Apply to all services"}</button></section>
+      {notice && <div className="availability-notice">{notice}</div>}
       <section className="availability-editor"><h2>{editingId ? "Edit weekly availability" : "Add weekly availability"}</h2>
 
       <label>Select weekday, start/end time, and appointment type:</label>

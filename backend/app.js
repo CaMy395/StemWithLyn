@@ -2994,6 +2994,29 @@ app.get('/admin-availability', async (req, res) => {
 });
 
 // Add weekly availability
+app.post('/admin-availability/standard-hours', async (req, res) => {
+  const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  const types = Array.isArray(req.body?.appointment_types) ? [...new Set(req.body.appointment_types.map(String))] : [];
+  if (!types.length || types.length > 100) return res.status(400).json({ error: 'Choose at least one appointment type.' });
+  const db = await pool.connect();
+  try {
+    await db.query('BEGIN');
+    await db.query('DELETE FROM weekly_availability WHERE weekday = ANY($1::text[]) AND appointment_type = ANY($2::text[])', [days, types]);
+    for (const appointmentType of types) {
+      for (const day of days) {
+        await db.query(`INSERT INTO weekly_availability (weekday,start_time,end_time,appointment_type)
+          VALUES ($1,'08:00','10:00',$2),($1,'15:00','22:00',$2)`, [day, appointmentType]);
+      }
+    }
+    await db.query('COMMIT');
+    return res.json({ success: true, days: days.length, appointmentTypes: types.length, slots: days.length * types.length * 2 });
+  } catch (error) {
+    await db.query('ROLLBACK');
+    console.error('Standard availability failed:', error);
+    return res.status(500).json({ error: 'Could not apply standard hours.' });
+  } finally { db.release(); }
+});
+
 app.post('/admin-availability', async (req, res) => {
   try {
     const { weekday, start_time, end_time, appointment_type } = req.body || {};
