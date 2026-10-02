@@ -63,7 +63,7 @@ const AdminAvailabilityPage = () => {
   };
 
   const applyStandardHours = async () => {
-    if (!window.confirm("Apply 8–10 AM and 3–10 PM to every service, Monday through Sunday? This replaces the current weekly hours.")) return;
+    if (!window.confirm("Apply 8–10 AM and 3–10 PM to every service, Monday through Friday? Weekend bookings require your approval. This replaces the current weekday hours.")) return;
     try {
       setApplyingPreset(true); setNotice("");
       const { data } = await axios.post(`${apiUrl}/admin-availability/standard-hours`, { appointment_types: appointmentTypes.map((item) => item.title) });
@@ -170,7 +170,7 @@ const AdminAvailabilityPage = () => {
   return (
     <main className="admin-availability availability-workspace">
       <header className="availability-header"><div><span>ADMIN WORKSPACE</span><h1>Availability</h1><p>Control which services clients can book each week.</p></div></header>
-      <section className="availability-preset"><div><span>STANDARD WEEKLY HOURS</span><h2>8–10 AM and 3–10 PM</h2><p>Apply these two booking windows to every service for all seven days.</p></div><button onClick={applyStandardHours} disabled={applyingPreset}>{applyingPreset ? "Applying…" : "Apply to all services"}</button></section>
+      <section className="availability-preset"><div><span>STANDARD WEEKDAY HOURS</span><h2>8–10 AM and 3–10 PM</h2><p>Applies Monday through Friday. Weekend appointments require your approval and can be added manually.</p></div><button onClick={applyStandardHours} disabled={applyingPreset}>{applyingPreset ? "Applying…" : "Apply to all services"}</button></section>
       {notice && <div className="availability-notice">{notice}</div>}
       <section className="availability-editor"><h2>{editingId ? "Edit weekly availability" : "Add weekly availability"}</h2>
 

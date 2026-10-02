@@ -2995,7 +2995,7 @@ app.get('/admin-availability', async (req, res) => {
 
 // Add weekly availability
 app.post('/admin-availability/standard-hours', async (req, res) => {
-  const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  const days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
   const types = Array.isArray(req.body?.appointment_types) ? [...new Set(req.body.appointment_types.map(String))] : [];
   if (!types.length || types.length > 100) return res.status(400).json({ error: 'Choose at least one appointment type.' });
   const db = await pool.connect();
