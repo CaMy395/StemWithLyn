@@ -2740,7 +2740,7 @@ app.delete('/api/tech-intake/:id', async (req, res) => {
 });
 
 const packageDetails = (title) => {
-  const match = String(title || '').match(/^(Virtual Tutoring Package|In-Person Tutoring) \((6|10) sessions/i);
+  const match = String(title || '').match(/^(Virtual Tutoring Package|In-Person Tutoring|Group Tutoring - Virtual Package|Group Tutoring - In-Person Package) \((6|10) sessions/i);
   if (!match) return null;
   return { key: `${match[1]}:${match[2]}`, title: `${match[1]} (${match[2]} sessions - SCHEDULING)`, total: Number(match[2]) };
 };

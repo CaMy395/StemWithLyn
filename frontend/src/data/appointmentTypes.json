@@ -3,18 +3,30 @@
   { "title": "Brent Wright Leadership Academy (1 hour)", "category": "Tutoring", "price": 0 },
 
   { "title": "Virtual Tutoring (1 hour, @ $50.00)", "category": "Tutoring", "price": 50 },
+  { "title": "Group Tutoring - Virtual (1 hour, total $50.00)", "category": "Tutoring", "price": 50, "group": true, "maxStudents": 3 },
   { "title": "Virtual Tutoring Package (6 sessions, @ $250.00)", "category": "Tutoring", "price": 250 },
   { "title": "Virtual Tutoring Package (6 sessions - SCHEDULING)", "category": "Tutoring", "price": 0 },
 
   { "title": "Virtual Tutoring Package (10 sessions, @ $400)", "category": "Tutoring", "price": 400 },
   { "title": "Virtual Tutoring Package (10 sessions - SCHEDULING)", "category": "Tutoring", "price": 0 },
 
+  { "title": "Group Tutoring - Virtual Package (6 sessions, total $250.00)", "category": "Tutoring", "price": 250, "group": true, "maxStudents": 3 },
+  { "title": "Group Tutoring - Virtual Package (6 sessions - SCHEDULING)", "category": "Tutoring", "price": 0, "group": true, "maxStudents": 3 },
+  { "title": "Group Tutoring - Virtual Package (10 sessions, total $400.00)", "category": "Tutoring", "price": 400, "group": true, "maxStudents": 3 },
+  { "title": "Group Tutoring - Virtual Package (10 sessions - SCHEDULING)", "category": "Tutoring", "price": 0, "group": true, "maxStudents": 3 },
+
   { "title": "In-Person Tutoring (1 hour, @ $65.00)", "category": "Tutoring", "price": 65 },
+  { "title": "Group Tutoring - In-Person (1 hour, total $65.00)", "category": "Tutoring", "price": 65, "group": true, "maxStudents": 3 },
   { "title": "In-Person Tutoring (6 sessions, @ $350.00)", "category": "Tutoring", "price": 350 },
   { "title": "In-Person Tutoring (6 sessions - SCHEDULING)", "category": "Tutoring", "price": 0 },
 
   { "title": "In-Person Tutoring (10 sessions, @ $580.00)", "category": "Tutoring", "price": 580 },
   { "title": "In-Person Tutoring (10 sessions - SCHEDULING)", "category": "Tutoring", "price": 0 },
+
+  { "title": "Group Tutoring - In-Person Package (6 sessions, total $350.00)", "category": "Tutoring", "price": 350, "group": true, "maxStudents": 3 },
+  { "title": "Group Tutoring - In-Person Package (6 sessions - SCHEDULING)", "category": "Tutoring", "price": 0, "group": true, "maxStudents": 3 },
+  { "title": "Group Tutoring - In-Person Package (10 sessions, total $580.00)", "category": "Tutoring", "price": 580, "group": true, "maxStudents": 3 },
+  { "title": "Group Tutoring - In-Person Package (10 sessions - SCHEDULING)", "category": "Tutoring", "price": 0, "group": true, "maxStudents": 3 },
 
   { "title": "Third Party Organization (1 hour)", "category": "Tutoring", "price": 0 },
   { "title": "Third Party Organization (In-Person) (1 hour)", "category": "Tutoring", "price": 0 },
