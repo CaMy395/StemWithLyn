@@ -2995,7 +2995,7 @@ app.get('/admin-availability', async (req, res) => {
 
 // Add weekly availability
 app.post('/admin-availability/standard-hours', async (req, res) => {
-  const days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
+  const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
   const types = Array.isArray(req.body?.appointment_types) ? [...new Set(req.body.appointment_types.map(String))] : [];
   if (!types.length || types.length > 100) return res.status(400).json({ error: 'Choose at least one appointment type.' });
   const db = await pool.connect();
@@ -3015,6 +3015,56 @@ app.post('/admin-availability/standard-hours', async (req, res) => {
     console.error('Standard availability failed:', error);
     return res.status(500).json({ error: 'Could not apply standard hours.' });
   } finally { db.release(); }
+});
+
+const ensureWeekendRequests = () => pool.query(`CREATE TABLE IF NOT EXISTS weekend_booking_requests (
+  id bigserial PRIMARY KEY, title text NOT NULL, client_name text NOT NULL, client_email text NOT NULL,
+  client_phone text, client_id integer, date date NOT NULL, time time NOT NULL, end_time time NOT NULL,
+  description text, price numeric(10,2) NOT NULL DEFAULT 0, status text NOT NULL DEFAULT 'pending',
+  created_at timestamptz NOT NULL DEFAULT now(), reviewed_at timestamptz
+)`);
+
+app.post('/api/weekend-booking-requests', async (req, res) => {
+  const data = req.body || {};
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(data.date || '') ? new Date(`${data.date}T12:00:00`).getDay() : -1;
+  if (![0,6].includes(day) || !data.title || !data.client_name || !data.client_email || !data.time || !data.end_time) {
+    return res.status(400).json({ error: 'Complete the weekend appointment request.' });
+  }
+  try {
+    await ensureWeekendRequests();
+    const result = await pool.query(`INSERT INTO weekend_booking_requests
+      (title,client_name,client_email,client_phone,client_id,date,time,end_time,description,price)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      [data.title,data.client_name,data.client_email,data.client_phone || '',data.client_id || null,data.date,data.time,data.end_time,data.description || '',Number(data.price)||0]);
+    return res.status(201).json(result.rows[0]);
+  } catch (error) { console.error('Weekend request failed:', error); return res.status(500).json({ error: 'Could not submit weekend request.' }); }
+});
+
+app.get('/api/weekend-booking-requests', async (_req, res) => {
+  try { await ensureWeekendRequests(); const result = await pool.query("SELECT * FROM weekend_booking_requests WHERE status='pending' ORDER BY date,time"); return res.json(result.rows); }
+  catch (error) { return res.status(500).json({ error: 'Could not load weekend requests.' }); }
+});
+
+app.patch('/api/weekend-booking-requests/:id', async (req, res) => {
+  const action = req.body?.action;
+  if (!['approve','decline'].includes(action)) return res.status(400).json({ error: 'Choose approve or decline.' });
+  const db = await pool.connect();
+  try {
+    await ensureWeekendRequests(); await db.query('BEGIN');
+    const found = await db.query("SELECT * FROM weekend_booking_requests WHERE id=$1 AND status='pending' FOR UPDATE", [req.params.id]);
+    if (!found.rowCount) { await db.query('ROLLBACK'); return res.status(404).json({ error: 'Pending request not found.' }); }
+    const item = found.rows[0];
+    if (action === 'approve') {
+      let clientId = item.client_id;
+      if (!clientId) { const client = await db.query('SELECT id FROM clients WHERE lower(email)=lower($1) LIMIT 1',[item.client_email]); clientId = client.rows[0]?.id; }
+      if (!clientId) { const client = await db.query('INSERT INTO clients(full_name,email,phone) VALUES($1,$2,$3) RETURNING id',[item.client_name,item.client_email,item.client_phone||'']); clientId=client.rows[0].id; }
+      await db.query(`INSERT INTO appointments(title,client_id,date,time,end_time,description,paid,price,addons)
+        VALUES($1,$2,$3,$4,$5,$6,false,$7,'[]')`,[item.title,clientId,item.date,item.time,item.end_time,`${item.description || ''} (Weekend request approved)`.trim(),item.price]);
+    }
+    await db.query("UPDATE weekend_booking_requests SET status=$1,reviewed_at=now() WHERE id=$2",[action === 'approve' ? 'approved':'declined',item.id]);
+    await db.query('COMMIT'); return res.json({ success:true,status:action === 'approve' ? 'approved':'declined' });
+  } catch(error){ await db.query('ROLLBACK'); console.error('Weekend review failed:',error); return res.status(500).json({error:'Could not review request.'}); }
+  finally { db.release(); }
 });
 
 app.post('/admin-availability', async (req, res) => {

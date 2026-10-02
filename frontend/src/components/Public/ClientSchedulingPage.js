@@ -42,6 +42,7 @@ const ClientSchedulingPage = ({ portalMode = false }) => {
   const [slotsErr, setSlotsErr] = useState("");
   const [formErr, setFormErr] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [requestSent, setRequestSent] = useState(false);
   const selectedService = useMemo(() => appointmentTypes.find((item) => item.title === selectedAppointmentType), [selectedAppointmentType]);
   const serviceMeta = selectedService ? getServiceMeta(selectedService) : null;
   const categories = useMemo(() => [...new Set(appointmentTypes.map((item) => item.category))], []);
@@ -126,6 +127,11 @@ const ClientSchedulingPage = ({ portalMode = false }) => {
     const appointmentData = { title: selectedAppointmentType, client_id: isPortal ? clientId : undefined, client_name: clientName.trim(), client_email: clientEmail.trim(), client_phone: clientPhone.trim(), date: toDateKey(selectedDate), time: normalizeTime(selectedSlot.start_time), end_time: normalizeTime(selectedSlot.end_time), description: notes.trim() || `Client booked a ${selectedAppointmentType} appointment${isPortal ? " (portal)" : ""}`, price: Number(selectedService.price || 0) };
     try {
       setIsSubmitting(true); setFormErr("");
+      if ([0, 6].includes(selectedDate.getDay())) {
+        await axios.post(`${apiUrl}/api/weekend-booking-requests`, appointmentData);
+        setRequestSent(true); setIsSubmitting(false);
+        return;
+      }
       if (packageBalance) {
         await axios.post(`${apiUrl}/client/packages/book`, { title: selectedAppointmentType, date: appointmentData.date, time: appointmentData.time, end_time: appointmentData.end_time }, { headers: clientAuthHeaders });
         navigate('/client-portal');
@@ -154,7 +160,7 @@ const ClientSchedulingPage = ({ portalMode = false }) => {
           <div className="details-grid"><label className="field"><span>Full name *</span><input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Your full name" autoComplete="name" /></label><label className="field"><span>Email address *</span><input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" /></label><label className="field"><span>Phone number *</span><input type="tel" value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} placeholder="(555) 123-4567" autoComplete="tel" /></label><label className="field field-wide"><span>Anything we should know? <small>Optional</small></span><textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Topics, goals, accessibility needs, or questions…" rows="4" /></label></div>
         </section>
       </div>
-      <aside className="booking-summary"><div className="summary-label">BOOKING SUMMARY</div><h2>Your session</h2><div className="summary-row"><span>Service</span><strong>{selectedService?.title || "Not selected"}</strong></div><div className="summary-row"><span>Date</span><strong>{formatDate(selectedDate)}</strong></div><div className="summary-row"><span>Time</span><strong>{selectedSlot ? `${formatTime(selectedSlot.start_time)} – ${formatTime(selectedSlot.end_time)}` : "Not selected"}</strong></div><div className="summary-row total"><span>Total</span><strong>{packageBalance ? "Included in package" : serviceMeta?.price || "—"}</strong></div>{formErr && <div className="inline-notice error" role="alert">{formErr}</div>}<button className="confirm-button" type="submit" disabled={isSubmitting || profileLoading}>{isSubmitting ? "Securing your time…" : selectedService?.price > 0 ? "Continue to secure payment" : "Confirm appointment"}</button><p className="summary-footnote">By confirming, you agree to receive appointment updates by email or text.</p>{isPortal && <button className="back-link" type="button" onClick={() => navigate("/client-portal")}>← Back to client portal</button>}</aside>
+      <aside className="booking-summary"><div className="summary-label">BOOKING SUMMARY</div><h2>Your session</h2><div className="summary-row"><span>Service</span><strong>{selectedService?.title || "Not selected"}</strong></div><div className="summary-row"><span>Date</span><strong>{formatDate(selectedDate)}</strong></div><div className="summary-row"><span>Time</span><strong>{selectedSlot ? `${formatTime(selectedSlot.start_time)} – ${formatTime(selectedSlot.end_time)}` : "Not selected"}</strong></div><div className="summary-row total"><span>Total</span><strong>{packageBalance ? "Included in package" : serviceMeta?.price || "—"}</strong></div>{requestSent && <div className="inline-notice">Your weekend request was sent for approval. You will not be charged unless it is approved.</div>}{formErr && <div className="inline-notice error" role="alert">{formErr}</div>}<button className="confirm-button" type="submit" disabled={isSubmitting || profileLoading || requestSent}>{isSubmitting ? "Submitting…" : requestSent ? "Request submitted" : [0, 6].includes(selectedDate.getDay()) ? "Request weekend approval" : selectedService?.price > 0 ? "Continue to secure payment" : "Confirm appointment"}</button><p className="summary-footnote">By confirming, you agree to receive appointment updates by email or text.</p>{isPortal && <button className="back-link" type="button" onClick={() => navigate("/client-portal")}>← Back to client portal</button>}</aside>
     </form>
   </main>;
 };
