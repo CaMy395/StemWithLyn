@@ -1,7 +1,7 @@
 // backend/app.js
 import express from 'express';
 import cors from 'cors';
-import { Client } from 'square';
+import { Client, WebhooksHelper } from 'square';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import moment from 'moment-timezone';
@@ -302,7 +302,7 @@ wss.on('connection', (ws, req) => {
     ws.send('Connection authenticated');
 });
 
-app.use(express.json()); // Middleware to parse JSON bodies
+app.use(express.json({ verify: (req, _res, buffer) => { req.rawBody = buffer.toString('utf8'); } }));
 app.set('trust proxy', 1);
 app.use('/api/stem-assistant', stemAssistantRouter);
 app.use('/api/study', createStudyLibraryRouter(pool, portalTokenSecret));
@@ -3322,6 +3322,30 @@ export default app;
 // Start the server
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
+});
+
+app.post('/api/square/webhook', async (req, res) => {
+  const signatureKey = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
+  const notificationUrl = process.env.SQUARE_WEBHOOK_NOTIFICATION_URL || 'https://stemwithlyn.onrender.com/api/square/webhook';
+  const signature = String(req.headers['x-square-hmacsha256-signature'] || '');
+  if (!signatureKey) return res.status(503).json({ error: 'Square webhook is not configured.' });
+  if (!WebhooksHelper.isValidWebhookEventSignature(req.rawBody || JSON.stringify(req.body), signature, signatureKey, notificationUrl)) {
+    return res.status(403).json({ error: 'Invalid Square webhook signature.' });
+  }
+  const eventId = String(req.body?.event_id || '');
+  const eventType = String(req.body?.type || '');
+  if (!eventId || !eventType) return res.status(400).json({ error: 'Invalid Square event.' });
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS square_webhook_events (
+      event_id text PRIMARY KEY, event_type text NOT NULL, payload jsonb NOT NULL, received_at timestamptz NOT NULL DEFAULT now()
+    )`);
+    await pool.query(`INSERT INTO square_webhook_events (event_id, event_type, payload)
+      VALUES ($1,$2,$3::jsonb) ON CONFLICT (event_id) DO NOTHING`, [eventId, eventType, JSON.stringify(req.body)]);
+    return res.sendStatus(200);
+  } catch (error) {
+    console.error('Square webhook processing failed:', error);
+    return res.status(500).json({ error: 'Webhook processing failed.' });
+  }
 });
 
 app.post('/api/profits/square-payment', async (req, res) => {
