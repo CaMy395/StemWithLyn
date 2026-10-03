@@ -3004,12 +3004,17 @@ app.post('/admin-availability/standard-hours', async (req, res) => {
     await db.query('DELETE FROM weekly_availability WHERE weekday = ANY($1::text[]) AND appointment_type = ANY($2::text[])', [days, types]);
     for (const appointmentType of types) {
       for (const day of days) {
-        await db.query(`INSERT INTO weekly_availability (weekday,start_time,end_time,appointment_type)
-          VALUES ($1,'08:00','10:00',$2),($1,'15:00','22:00',$2)`, [day, appointmentType]);
+        if (day === 'Saturday' || day === 'Sunday') {
+          await db.query(`INSERT INTO weekly_availability (weekday,start_time,end_time,appointment_type)
+            VALUES ($1,'08:00','22:00',$2)`, [day, appointmentType]);
+        } else {
+          await db.query(`INSERT INTO weekly_availability (weekday,start_time,end_time,appointment_type)
+            VALUES ($1,'08:00','10:00',$2),($1,'15:00','22:00',$2)`, [day, appointmentType]);
+        }
       }
     }
     await db.query('COMMIT');
-    return res.json({ success: true, days: days.length, appointmentTypes: types.length, slots: days.length * types.length * 2 });
+    return res.json({ success: true, days: days.length, appointmentTypes: types.length, slots: types.length * 12 });
   } catch (error) {
     await db.query('ROLLBACK');
     console.error('Standard availability failed:', error);

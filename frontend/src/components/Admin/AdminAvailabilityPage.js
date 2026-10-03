@@ -182,7 +182,7 @@ const AdminAvailabilityPage = () => {
   return (
     <main className="admin-availability availability-workspace">
       <header className="availability-header"><div><span>ADMIN WORKSPACE</span><h1>Availability</h1><p>Control which services clients can book each week.</p></div></header>
-      <section className="availability-preset"><div><span>STANDARD HOURS</span><h2>8–10 AM and 3–10 PM</h2><p>Weekdays book normally. Weekend selections enter your approval queue.</p></div><button onClick={applyStandardHours} disabled={applyingPreset}>{applyingPreset ? "Applying…" : "Apply to all services"}</button></section>
+      <section className="availability-preset"><div><span>STANDARD HOURS</span><h2>Weekdays split · Weekends 8 AM–10 PM</h2><p>Weekdays use 8–10 AM and 3–10 PM. All weekend hours require your approval.</p></div><button onClick={applyStandardHours} disabled={applyingPreset}>{applyingPreset ? "Applying…" : "Apply to all services"}</button></section>
       {notice && <div className="availability-notice">{notice}</div>}
       <section className="availability-editor weekend-requests"><h2>Weekend approval requests</h2>{weekendRequests.length === 0 ? <p>No pending weekend requests.</p> : weekendRequests.map((item) => <article key={item.id}><div><strong>{item.client_name} · {item.title}</strong><span>{String(item.date).slice(0,10)} · {formatTime(item.time)}–{formatTime(item.end_time)}</span></div><div><button onClick={() => reviewWeekendRequest(item.id,'approve')}>Approve</button><button className="secondary" onClick={() => reviewWeekendRequest(item.id,'decline')}>Decline</button></div></article>)}</section>
       <section className="availability-editor"><h2>{editingId ? "Edit weekly availability" : "Add weekly availability"}</h2>
