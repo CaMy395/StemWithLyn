@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { FaCalendarAlt, FaClock, FaPlus, FaUser } from "react-icons/fa";
 import "../../ClientPortalPage.css";
+import { MessageLink } from './PortalMessages';
 
 const ClientPortalPage = () => {
   const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:3001";
@@ -37,6 +38,9 @@ const ClientPortalPage = () => {
 
   const [rescheduleSlots, setRescheduleSlots] = useState([]);
   const [loadingRescheduleSlots, setLoadingRescheduleSlots] = useState(false);
+  const [rescheduleError, setRescheduleError] = useState("");
+  const [rescheduleSubmitting, setRescheduleSubmitting] = useState(false);
+  const rescheduleRequest = useRef(0);
 
   const now = useMemo(() => new Date(), []);
   const canUsePortal = loggedInUser && loggedInUser.role !== "admin";
@@ -227,6 +231,8 @@ const ClientPortalPage = () => {
   };
 
   const fetchRescheduleAvailability = async (appt, selectedDate) => {
+    const request = ++rescheduleRequest.current;
+    setRescheduleError("");
     if (!appt?.title || !selectedDate) {
       setRescheduleSlots([]);
       return;
@@ -245,7 +251,10 @@ const ClientPortalPage = () => {
       const availabilityRes = await fetch(
         `${apiUrl}/availability?weekday=${encodeURIComponent(
           weekday
-        )}&appointmentType=${encodeURIComponent(appt.title)}`
+        )}&appointmentType=${encodeURIComponent(appt.title)}&duration=${(() => {
+          const mins = (t) => { const [h, m] = String(t).split(":").map(Number); return h * 60 + m; };
+          return appt.end_time && mins(appt.end_time) > mins(appt.time) ? mins(appt.end_time) - mins(appt.time) : /30\s*min/i.test(appt.title) ? 30 : 60;
+        })()}`
       );
 
       if (!availabilityRes.ok) {
@@ -260,12 +269,13 @@ const ClientPortalPage = () => {
       );
       const blockedData = blockedRes.ok
         ? await blockedRes.json()
-        : { blockedTimes: [] };
+        : (() => { throw new Error("Could not check blocked times. Please try again."); })();
 
       const bookedRes = await fetch(
         `${apiUrl}/appointments/by-date?date=${encodeURIComponent(selectedDate)}`
       );
-      const bookedData = bookedRes.ok ? await bookedRes.json() : [];
+      if (!bookedRes.ok) throw new Error("Could not check existing bookings. Please try again.");
+      const bookedData = await bookedRes.json();
 
       const toMinutes = (value) => {
         const [hours, minutes] = String(normalizeTime(value)).split(":").map(Number);
@@ -300,17 +310,21 @@ const ClientPortalPage = () => {
           return ta.localeCompare(tb);
         });
 
-      setRescheduleSlots(slots);
+      if (request === rescheduleRequest.current) setRescheduleSlots(slots);
     } catch (e) {
-      setErr(e?.message || "Failed to load available times.");
-      setRescheduleSlots([]);
+      if (request === rescheduleRequest.current) {
+        setRescheduleError(e?.message || "Failed to load available times.");
+        setRescheduleSlots([]);
+      }
     } finally {
-      setLoadingRescheduleSlots(false);
+      if (request === rescheduleRequest.current) setLoadingRescheduleSlots(false);
     }
   };
 
   const openReschedule = async (appt) => {
-    const dateOnly = String(appt?.date || "").slice(0, 10);
+    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+    const minimum = tomorrow.toLocaleDateString("en-CA");
+    const dateOnly = String(appt?.date || "").slice(0, 10) < minimum ? minimum : String(appt.date).slice(0, 10);
     setReschedAppt(appt);
     setNewDate(dateOnly);
     setNewTime("");
@@ -319,6 +333,7 @@ const ClientPortalPage = () => {
   };
 
   const closeReschedule = () => {
+    ++rescheduleRequest.current;
     setShowReschedule(false);
     setReschedAppt(null);
     setNewDate("");
@@ -328,7 +343,7 @@ const ClientPortalPage = () => {
   };
 
   const submitReschedule = async () => {
-    if (!reschedAppt?.id) return;
+    if (!reschedAppt?.id || rescheduleSubmitting) return;
 
     if (!newDate || !newTime) {
       setErr("Please choose one of the available time slots.");
@@ -336,6 +351,7 @@ const ClientPortalPage = () => {
     }
 
     try {
+      setRescheduleSubmitting(true);
       setErr("");
 
       const res = await fetch(
@@ -351,14 +367,16 @@ const ClientPortalPage = () => {
       );
 
       if (!res.ok) {
-        const t = await res.text();
-        throw new Error(t || "Failed to reschedule.");
+        const data = await res.json();
+        throw new Error(data.error || "Failed to reschedule.");
       }
 
       closeReschedule();
       await refreshAppointments();
     } catch (e) {
-      setErr(e?.message || "Failed to reschedule.");
+      setRescheduleError(e?.message || "Failed to reschedule.");
+    } finally {
+      setRescheduleSubmitting(false);
     }
   };
 
@@ -455,6 +473,7 @@ const ClientPortalPage = () => {
                 You can cancel or reschedule an appointment <b>once</b>. After
                 that, please contact STEM with Lyn directly.
               </p>
+              <MessageLink />
             </section>
 
             <section className="portal-card">
@@ -604,9 +623,10 @@ const ClientPortalPage = () => {
 
               <div className="modal-slot-title">Available Time Slots</div>
 
+              {rescheduleError && <div className="modal-warning" role="alert">{rescheduleError}</div>}
               {loadingRescheduleSlots ? (
                 <div className="modal-message">Loading available times…</div>
-              ) : rescheduleSlots.length === 0 ? (
+              ) : rescheduleError ? null : rescheduleSlots.length === 0 ? (
                 <div className="modal-warning">
                   No available time slots for that date.
                 </div>
@@ -643,10 +663,10 @@ const ClientPortalPage = () => {
 
                 <button
                   onClick={submitReschedule}
-                  disabled={!newDate || !newTime}
+                  disabled={!newDate || !newTime || loadingRescheduleSlots || rescheduleSubmitting}
                   className="portal-btn primary"
                 >
-                  Confirm Reschedule
+                  {rescheduleSubmitting ? "Rescheduling…" : "Confirm Reschedule"}
                 </button>
               </div>
 

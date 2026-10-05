@@ -9,6 +9,7 @@ import ForgotPassword from './components/Public/ForgotPassword';
 import ForgotUsername from './components/Public/ForgotUsername';
 import ResetPassword from './components/Public/ResetPassword';
 import ClientPortalPage from './components/User/ClientPortalPage';
+import PortalMessages, { MessageLink } from './components/User/PortalMessages';
 import ClientSchedulingPage from './components/Public/ClientSchedulingPage';
 import Profits from './components/Admin/Profits';
 import WelcomePage from './components/Public/WelcomePage';
@@ -255,6 +256,7 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
                     </Link>
                 </li>
                 <li><Link to="/client-portal/study-library">Study Library</Link></li>
+                <li><MessageLink /></li>
 
             </ul>
 
@@ -306,6 +308,8 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
                 <Route path="/client-scheduling-success" element={<PaymentSuccess />} />
                 <Route path="/payment-success" element={<PaymentSuccess />} />
                 <Route path="/admin" element={userRole === 'admin' ? <AdminDashboard /> : <Navigate to="/login" />} />
+                <Route path="/admin/messages" element={userRole === 'admin' ? <PortalMessages admin /> : <Navigate to="/login" />} />
+                <Route path="/client-portal/messages" element={userRole && userRole !== 'admin' ? <PortalMessages /> : <Navigate to="/login" />} />
                 <Route path="/admin/study-library" element={userRole === 'admin' ? <StudyLibraryPage adminMode /> : <Navigate to="/login" />} />
                 <Route path="/client-portal/study-library" element={userRole && userRole !== 'admin' ? <StudyLibraryPage /> : <Navigate to="/login" />} />
 <Route

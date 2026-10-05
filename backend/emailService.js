@@ -39,6 +39,17 @@ const transporter = nodemailer.createTransport({
   tls: { rejectUnauthorized: false },
 });
 
+export async function sendPortalMessageNotification({ admin, client }) {
+  const base = process.env.FRONTEND_URL || 'https://stemwithlyn.onrender.com';
+  const url = `${base.replace(/\/$/, '')}/${admin ? 'client-portal/messages' : 'admin/messages'}`;
+  await transporter.sendMail({
+    from: EMAIL_USER,
+    to: admin ? client.email : 'stemwithlyn@gmail.com',
+    subject: admin ? 'Lyn replied to your portal message' : 'New client message in your STEM with Lyn portal',
+    text: `${admin ? 'Lyn sent you a reply.' : 'A client sent you a message.'}\n\nSign in to read and reply: ${url}\n\nPlease reply in the portal so your conversation stays together.`,
+  });
+}
+
 const adminTransporter =
   ADMIN_EMAIL === EMAIL_USER && ADMIN_PASS === EMAIL_PASS
     ? transporter

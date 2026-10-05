@@ -9,6 +9,7 @@ import path from 'path'; // Import path to handle static file serving
 import { fileURLToPath } from 'url'; // Required for ES module __dirname
 import bcrypt from 'bcrypt';
 import pool from './db.js'; // Import the centralized pool connection
+import { expandAvailability, serviceDuration } from './schedulingSlots.js';
 import axios from "axios"; // ✅ Import axios
 import {sendPortalInviteEmail, sendRegistrationEmail, sendResetEmail, sendUsernameReminderEmail, sendTutoringIntakeEmail, sendTutoringApptEmail, sendTutoringRescheduleEmail,sendCancellationEmail, sendTextMessage,  sendMentorSessionLogEmail} from './emailService.js';
 import 'dotenv/config';
@@ -17,6 +18,8 @@ import http from 'http';
 import fs from 'fs';
 import stemAssistantRouter from './routes/stemAssistant.js';
 import createStudyLibraryRouter from './routes/studyLibrary.js';
+import createPortalMessagesRouter from './routes/portalMessages.js';
+import { sendPortalMessageNotification } from './emailService.js';
 import { google } from 'googleapis';
 
 const oauth2Client = new google.auth.OAuth2(
@@ -306,6 +309,7 @@ app.use(express.json({ verify: (req, _res, buffer) => { req.rawBody = buffer.toS
 app.set('trust proxy', 1);
 app.use('/api/stem-assistant', stemAssistantRouter);
 app.use('/api/study', createStudyLibraryRouter(pool, portalTokenSecret));
+app.use('/api/messages', createPortalMessagesRouter(pool, portalTokenSecret, sendPortalMessageNotification));
 
 // Define __filename and __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -1093,7 +1097,17 @@ app.post("/client/appointments/:id/reschedule", async (req, res) => {
     };
 
     const newTime = normalizeTime(time);
-    const newEnd = end_time ? normalizeTime(end_time) : appt.end_time;
+    const duration = appt.end_time && timeToMinutes(appt.end_time) > timeToMinutes(appt.time)
+      ? timeToMinutes(appt.end_time) - timeToMinutes(appt.time) : serviceDuration(appt.title);
+    const newEnd = minutesToTime(timeToMinutes(newTime) + duration);
+    const weekday = new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' });
+    const availability = await pool.query(
+      `SELECT * FROM weekly_availability WHERE lower(weekday) = lower($1) AND lower(appointment_type) = lower($2)`,
+      [weekday, appt.title]
+    );
+    if (!expandAvailability(availability.rows, duration).some((slot) => slot.start_time.slice(0, 5) === newTime.slice(0, 5))) {
+      return res.status(409).json({ error: 'This time is no longer available. Please choose another time.' });
+    }
 
     const blockRows = await pool.query(
       `SELECT time_slot, label FROM schedule_blocks WHERE date = $1`,
@@ -1110,8 +1124,8 @@ app.post("/client/appointments/:id/reschedule", async (req, res) => {
 
     // prevent conflicts
     const conflict = await pool.query(
-      `SELECT id FROM appointments WHERE date = $1 AND time = $2 AND id <> $3 LIMIT 1`,
-      [date, newTime, id]
+      `SELECT id FROM appointments WHERE date = $1 AND time < $4::time AND COALESCE(end_time, time + interval '30 minutes') > $2::time AND id <> $3 LIMIT 1`,
+      [date, newTime, id, newEnd]
     );
     if (conflict.rowCount > 0) return res.status(409).json({ error: "That time slot is already booked." });
 
@@ -2853,8 +2867,8 @@ app.post('/client/packages/book', async (req, res) => {
     const balance = packageBalances(packageData.purchases, packageData.appointments).find((item) => item.title === title);
     if (!balance || balance.remaining < 1) { await db.query('ROLLBACK'); return res.status(409).json({ error: 'No package sessions remain for this service.' }); }
     const weekday = new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long', timeZone: process.env.BUSINESS_TIME_ZONE || 'America/New_York' });
-    const slot = await db.query(`SELECT 1 FROM weekly_availability WHERE lower(weekday) = lower($1) AND appointment_type = $2 AND start_time = $3::time AND end_time = $4::time LIMIT 1`, [weekday, title, time, end_time]);
-    if (!slot.rowCount) { await db.query('ROLLBACK'); return res.status(409).json({ error: 'This time is no longer available.' }); }
+    const slot = await db.query(`SELECT * FROM weekly_availability WHERE lower(weekday) = lower($1) AND appointment_type = $2`, [weekday, title]);
+    if (!expandAvailability(slot.rows, serviceDuration(title)).some((item) => item.start_time.slice(0, 5) === time.slice(0, 5) && item.end_time.slice(0, 5) === end_time.slice(0, 5))) { await db.query('ROLLBACK'); return res.status(409).json({ error: 'This time is no longer available.' }); }
     const conflict = await db.query(`SELECT 1 FROM appointments WHERE date = $1 AND time < $3::time AND COALESCE(end_time, time + interval '30 minutes') > $2::time LIMIT 1`, [date, time, end_time]);
     const blocks = await db.query('SELECT time_slot, label FROM schedule_blocks WHERE date = $1', [date]);
     const start = timeToMinutes(time), end = timeToMinutes(end_time);
@@ -3165,6 +3179,13 @@ app.delete('/admin-availability/:id', async (req, res) => {
 app.get('/availability', async (req, res) => {
     try {
         const { weekday, appointmentType } = req.query;
+        if (typeof weekday !== 'string' || typeof appointmentType !== 'string') {
+          return res.status(400).json({ error: 'weekday and appointmentType are required.' });
+        }
+        const duration = Number(req.query.duration) || serviceDuration(appointmentType);
+        if (!Number.isInteger(duration) || duration < 15 || duration > 360) {
+          return res.status(400).json({ error: 'Invalid session duration.' });
+        }
 
         const availabilityQuery = `
             SELECT * FROM weekly_availability
@@ -3183,7 +3204,7 @@ app.get('/availability', async (req, res) => {
         }
 
         console.log("✅ Sending Availability Data:", result.rows);
-        res.json(result.rows);
+        res.json(expandAvailability(result.rows, duration));
     } catch (error) {
         console.error("❌ Error fetching availability:", error);
         res.status(500).json({ error: "Failed to fetch availability." });

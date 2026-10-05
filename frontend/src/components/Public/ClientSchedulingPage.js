@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import axios from "axios";
 import Calendar from "react-calendar";
@@ -30,6 +30,7 @@ const ClientSchedulingPage = ({ portalMode = false }) => {
   const [selectedAppointmentType, setSelectedAppointmentType] = useState("");
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [availableSlots, setAvailableSlots] = useState([]);
+  const availabilityRequest = useRef(0);
   const [packages, setPackages] = useState([]);
   const [clientId, setClientId] = useState(null);
   const [clientName, setClientName] = useState("");
@@ -88,8 +89,9 @@ const ClientSchedulingPage = ({ portalMode = false }) => {
   }, [isPortal, packages, searchParams]);
 
   const fetchAvailability = useCallback(async () => {
-    if (!selectedAppointmentType || !selectedDate) { setAvailableSlots([]); return; }
-    setSlotsLoading(true); setSlotsErr(""); setSelectedSlot(null);
+    const request = ++availabilityRequest.current;
+    if (!selectedAppointmentType || !selectedDate) { setAvailableSlots([]); setSelectedSlot(null); setSlotsLoading(false); return; }
+    setSlotsLoading(true); setSlotsErr(""); setSelectedSlot(null); setAvailableSlots([]);
     const date = toDateKey(selectedDate); const weekday = selectedDate.toLocaleDateString("en-US", { weekday: "long" });
     try {
       const [availabilityRes, blockedRes, bookedRes] = await Promise.all([
@@ -97,6 +99,7 @@ const ClientSchedulingPage = ({ portalMode = false }) => {
         axios.get(`${apiUrl}/blocked-times`, { params: { date } }),
         axios.get(`${apiUrl}/appointments/by-date`, { params: { date } }),
       ]);
+      if (request !== availabilityRequest.current) return;
       const blockIntervals = Array.isArray(blockedRes.data?.blockIntervals) ? blockedRes.data.blockIntervals : [];
       const appointments = Array.isArray(bookedRes.data) ? bookedRes.data : [];
       setAvailableSlots((Array.isArray(availabilityRes.data) ? availabilityRes.data : [])
@@ -112,8 +115,8 @@ const ClientSchedulingPage = ({ portalMode = false }) => {
           });
           return !hitsBlock && !hitsAppointment;
         }));
-    } catch (error) { console.error("Error fetching availability:", error); setAvailableSlots([]); setSlotsErr("We couldn't load available times. Please try again."); }
-    finally { setSlotsLoading(false); }
+    } catch (error) { if (request === availabilityRequest.current) { console.error("Error fetching availability:", error); setAvailableSlots([]); setSlotsErr("We couldn't load available times. Please try again."); } }
+    finally { if (request === availabilityRequest.current) setSlotsLoading(false); }
   }, [apiUrl, selectedAppointmentType, selectedDate]);
   useEffect(() => { fetchAvailability(); }, [fetchAvailability]);
 
