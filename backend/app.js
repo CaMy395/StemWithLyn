@@ -19,6 +19,7 @@ import fs from 'fs';
 import stemAssistantRouter from './routes/stemAssistant.js';
 import createStudyLibraryRouter from './routes/studyLibrary.js';
 import createPortalMessagesRouter from './routes/portalMessages.js';
+import createVisitorAlertsRouter from './routes/visitorAlerts.js';
 import { sendPortalMessageNotification } from './emailService.js';
 import { google } from 'googleapis';
 
@@ -310,6 +311,7 @@ app.set('trust proxy', 1);
 app.use('/api/stem-assistant', stemAssistantRouter);
 app.use('/api/study', createStudyLibraryRouter(pool, portalTokenSecret));
 app.use('/api/messages', createPortalMessagesRouter(pool, portalTokenSecret, sendPortalMessageNotification));
+app.use('/api/visitor-alerts', createVisitorAlertsRouter(pool, portalTokenSecret));
 
 // Define __filename and __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);

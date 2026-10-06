@@ -28,6 +28,7 @@ import PaymentSuccess from './components/Public/PaymentSuccess';
 import ScholarshipsPage from './components/Public/ScholarshipsPage';
 import StemChatBox from './components/Public/StemChatBox';
 import StudyLibraryPage from './components/Study/StudyLibraryPage';
+import { VisitorTracking } from './components/VisitorAlerts';
 
 import WebSocketProvider from './WebSocketProvider';
 import './App.css';
@@ -94,6 +95,7 @@ const App = () => {
 
     return (
         <Router>
+            <VisitorTracking userRole={userRole} />
             <WebSocketProvider>
                 <Routes>   
                     {/* Main App Routes */}
