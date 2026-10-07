@@ -29,6 +29,7 @@ import ScholarshipsPage from './components/Public/ScholarshipsPage';
 import StemChatBox from './components/Public/StemChatBox';
 import StudyLibraryPage from './components/Study/StudyLibraryPage';
 import { VisitorTracking } from './components/VisitorAlerts';
+import LiveVisitors from './components/Admin/LiveVisitors';
 
 import WebSocketProvider from './WebSocketProvider';
 import './App.css';
@@ -310,6 +311,7 @@ const AppContent = ({ userRole, handleLogout, onLogin, totalFormsCount }) => {
                 <Route path="/client-scheduling-success" element={<PaymentSuccess />} />
                 <Route path="/payment-success" element={<PaymentSuccess />} />
                 <Route path="/admin" element={userRole === 'admin' ? <AdminDashboard /> : <Navigate to="/login" />} />
+                <Route path="/admin/visitors" element={userRole === 'admin' ? <LiveVisitors /> : <Navigate to="/login" state={{ from: `${window.location.pathname}${window.location.search}` }} replace />} />
                 <Route path="/admin/messages" element={userRole === 'admin' ? <PortalMessages admin /> : <Navigate to="/login" />} />
                 <Route path="/client-portal/messages" element={userRole && userRole !== 'admin' ? <PortalMessages /> : <Navigate to="/login" />} />
                 <Route path="/admin/study-library" element={userRole === 'admin' ? <StudyLibraryPage adminMode /> : <Navigate to="/login" />} />

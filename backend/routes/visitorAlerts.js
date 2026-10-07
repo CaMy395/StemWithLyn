@@ -18,6 +18,10 @@ export default function createVisitorAlertsRouter(pool, secret) {
     await pool.query(`CREATE TABLE IF NOT EXISTS visitor_push_settings (id integer PRIMARY KEY CHECK(id=1), keys jsonb NOT NULL)`);
     await pool.query(`CREATE TABLE IF NOT EXISTS visitor_push_subscriptions (endpoint text PRIMARY KEY, user_id integer NOT NULL REFERENCES users(id), subscription jsonb NOT NULL)`);
     await pool.query(`CREATE TABLE IF NOT EXISTS visitor_alert_sessions (id uuid PRIMARY KEY, seen_at timestamptz NOT NULL DEFAULT now())`);
+    await pool.query(`ALTER TABLE visitor_alert_sessions
+      ADD COLUMN IF NOT EXISTS user_id integer REFERENCES users(id) ON DELETE SET NULL,
+      ADD COLUMN IF NOT EXISTS page text NOT NULL DEFAULT '/',
+      ADD COLUMN IF NOT EXISTS arrived_at timestamptz NOT NULL DEFAULT now()`);
     const keys = webpush.generateVAPIDKeys();
     await pool.query('INSERT INTO visitor_push_settings (id, keys) VALUES (1, $1) ON CONFLICT DO NOTHING', [keys]);
     return (await pool.query('SELECT keys FROM visitor_push_settings WHERE id=1')).rows[0].keys;
@@ -52,24 +56,31 @@ export default function createVisitorAlertsRouter(pool, secret) {
     const id = req.body?.id;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id || '')) return res.sendStatus(400);
     try {
+      let userId = null;
       if (req.headers.authorization) {
         try {
           const payload = jwt.verify(String(req.headers.authorization).replace(/^Bearer\s+/i, ''), secret);
-          const user = await pool.query('SELECT role FROM users WHERE id=$1', [payload.userId]);
-          if (user.rows[0]?.role === 'admin') return res.sendStatus(204);
+          const user = await pool.query('SELECT id, role FROM users WHERE id=$1', [payload.userId]);
+          if (user.rows[0]?.role === 'admin') {
+            await ready();
+            await pool.query('DELETE FROM visitor_alert_sessions WHERE id=$1', [id]);
+            return res.sendStatus(204);
+          }
+          userId = user.rows[0]?.id || null;
         } catch { /* Anonymous visits are allowed. */ }
       }
       await ready();
       await pool.query("DELETE FROM visitor_alert_sessions WHERE seen_at < now() - interval '1 day'");
-      const result = await pool.query(`INSERT INTO visitor_alert_sessions (id) VALUES ($1)
-        ON CONFLICT(id) DO UPDATE SET seen_at=now()
-        WHERE visitor_alert_sessions.seen_at < now() - interval '30 minutes' RETURNING id`, [id]);
-      if (!result.rowCount) await pool.query('UPDATE visitor_alert_sessions SET seen_at=now() WHERE id=$1', [id]);
+      const page = typeof req.body.page === 'string' && /^\/[a-zA-Z0-9/_-]{0,199}$/.test(req.body.page) ? req.body.page : '/';
+      const result = await pool.query(`INSERT INTO visitor_alert_sessions (id,user_id,page) VALUES ($1,$2,$3)
+        ON CONFLICT(id) DO UPDATE SET seen_at=now(),arrived_at=now(),user_id=$2,page=$3
+        WHERE visitor_alert_sessions.seen_at < now() - interval '30 minutes' RETURNING id`, [id, userId, page]);
+      if (!result.rowCount) await pool.query('UPDATE visitor_alert_sessions SET seen_at=now(),user_id=$2,page=$3 WHERE id=$1', [id, userId, page]);
       res.sendStatus(204);
       if (result.rowCount && alerts++ < 10) {
         const subscriptions = await pool.query(`SELECT s.subscription FROM visitor_push_subscriptions s JOIN users u ON u.id=s.user_id WHERE u.role='admin'`);
         await Promise.allSettled(subscriptions.rows.map(row => send(row.subscription, {
-          title: 'Someone is visiting STEM with Lyn', body: 'A visitor just arrived on your site.', tag: `visitor-${id}`, url: '/admin',
+          title: 'Someone is visiting STEM with Lyn', body: 'Tap to see who is on your site.', tag: `visitor-${id}`, url: `/admin/visitors?visitor=${id}`,
         })));
       }
     } catch (error) {
@@ -91,6 +102,22 @@ export default function createVisitorAlertsRouter(pool, secret) {
     }
   });
   router.get('/key', async (_req, res) => res.json({ publicKey: (await ready()).publicKey }));
+  router.get('/visitors', async (req, res) => {
+    const selected = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(req.query.visitor || '') ? req.query.visitor : null;
+    try {
+      const result = await pool.query(`SELECT s.id, s.page, s.arrived_at, s.seen_at,
+        s.seen_at > now() - interval '2 minutes' AS active,
+        CASE WHEN u.role <> 'admin' THEN COALESCE(NULLIF(u.name,''),NULLIF(u.username,''),'Signed-in client') ELSE NULL END AS name
+        FROM visitor_alert_sessions s LEFT JOIN users u ON u.id=s.user_id
+        WHERE (u.role IS NULL OR u.role <> 'admin') AND
+          (s.seen_at > now() - interval '30 minutes' OR s.id=$1::uuid)
+        ORDER BY (s.id=$1::uuid) DESC NULLS LAST, s.seen_at DESC LIMIT 100`, [selected]);
+      res.set('Cache-Control', 'no-store').json({ visitors: result.rows, updatedAt: new Date().toISOString() });
+    } catch (error) {
+      console.error('Visitor list failed:', error.message);
+      res.status(503).json({ error: 'Could not load visitors. Please try again.' });
+    }
+  });
   router.post('/subscription', async (req, res) => {
     if (!validSubscription(req.body)) return res.status(400).json({ error: 'Invalid push subscription.' });
     try {
@@ -108,7 +135,7 @@ export default function createVisitorAlertsRouter(pool, secret) {
   router.post('/test', async (req, res) => {
     try {
       const result = await pool.query('SELECT subscription FROM visitor_push_subscriptions WHERE endpoint=$1 AND user_id=$2', [req.body?.endpoint, req.adminId]);
-      const delivered = result.rowCount && await send(result.rows[0].subscription, { title: 'Visitor alerts are ready', body: 'You will receive an alert when someone arrives on your site.', tag: 'visitor-test', url: '/admin' });
+      const delivered = result.rowCount && await send(result.rows[0].subscription, { title: 'Visitor alerts are ready', body: 'Tap to open your live visitor view.', tag: 'visitor-test', url: '/admin/visitors' });
       res.status(delivered ? 200 : 503).json(delivered ? { sent: true } : { error: 'Test delivery failed. Try enabling alerts again.' });
     } catch { res.status(503).json({ error: 'Could not send the test alert.' }); }
   });

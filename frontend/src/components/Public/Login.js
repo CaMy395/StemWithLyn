@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import "../../App.css";
 
 const Login = ({ onLogin }) => {
@@ -8,8 +8,11 @@ const Login = ({ onLogin }) => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  const adminDestination = /^\/admin\/visitors(?:\?visitor=[0-9a-f-]+)?$/i.test(location.state?.from || '') ? location.state.from : '/admin';
 
   useEffect(() => {
+    if (location.state?.reauthenticate) return;
     let stored = null;
     try {
       stored = JSON.parse(localStorage.getItem("loggedInUser"));
@@ -24,10 +27,10 @@ const Login = ({ onLogin }) => {
 
     if (role) {
       onLogin(role);
-      if (role === "admin") navigate("/admin");
+      if (role === "admin") navigate(adminDestination);
       else navigate("/client-portal");
     }
-  }, [navigate, onLogin]);
+  }, [navigate, onLogin, adminDestination, location.state?.reauthenticate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -58,7 +61,7 @@ const Login = ({ onLogin }) => {
 
       onLogin(data.role);
 
-      if (data.role === "admin") navigate("/admin");
+      if (data.role === "admin") navigate(adminDestination);
       else navigate("/client-portal");
     } catch (err) {
       setError(err.message || "Something went wrong. Please try again later.");
