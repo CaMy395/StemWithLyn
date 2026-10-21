@@ -250,6 +250,10 @@ async function ensureUniqueUsername(baseUsername) {
 
 const jsonPath = path.join(process.cwd(), '../frontend/src/data/appointmentTypes.json');
 const appointmentTypes = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+const serviceTitlesForAvailability = (title) => {
+  const service = appointmentTypes.find((item) => item.title === title || item.legacyTitle === title);
+  return [...new Set([title, service?.title, service?.legacyTitle].filter(Boolean))].map((value) => value.toLowerCase());
+};
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -1104,8 +1108,8 @@ app.post("/client/appointments/:id/reschedule", async (req, res) => {
     const newEnd = minutesToTime(timeToMinutes(newTime) + duration);
     const weekday = new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' });
     const availability = await pool.query(
-      `SELECT * FROM weekly_availability WHERE lower(weekday) = lower($1) AND lower(appointment_type) = lower($2)`,
-      [weekday, appt.title]
+      `SELECT * FROM weekly_availability WHERE lower(weekday) = lower($1) AND lower(appointment_type) = ANY($2::text[])`,
+      [weekday, serviceTitlesForAvailability(appt.title)]
     );
     if (!expandAvailability(availability.rows, duration).some((slot) => slot.start_time.slice(0, 5) === newTime.slice(0, 5))) {
       return res.status(409).json({ error: 'This time is no longer available. Please choose another time.' });
@@ -2994,8 +2998,8 @@ app.get('/admin-availability', async (req, res) => {
     }
 
     if (appointmentType) {
-      query += ` AND LOWER(appointment_type) = LOWER($${i})`;
-      values.push(String(appointmentType).trim());
+      query += ` AND LOWER(appointment_type) = ANY($${i}::text[])`;
+      values.push(serviceTitlesForAvailability(String(appointmentType).trim()));
       i++;
     }
 
@@ -3192,11 +3196,11 @@ app.get('/availability', async (req, res) => {
         const availabilityQuery = `
             SELECT * FROM weekly_availability
             WHERE LOWER(weekday) = LOWER($1) 
-            AND LOWER(appointment_type) = LOWER($2)
+            AND LOWER(appointment_type) = ANY($2::text[])
             ORDER BY start_time
         `;
         
-        const queryParams = [weekday.trim(), appointmentType.trim()];
+        const queryParams = [weekday.trim(), serviceTitlesForAvailability(appointmentType.trim())];
 
         const result = await pool.query(availabilityQuery, queryParams);
 
