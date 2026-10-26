@@ -5,6 +5,8 @@ import 'react-calendar/dist/Calendar.css';
 import { FaCalendarAlt, FaChevronLeft, FaChevronRight, FaClock, FaEdit, FaPlus, FaTrash, FaTimes } from 'react-icons/fa';
 import '../../App.css';
 import appointmentTypes from '../../data/appointmentTypes.json';
+import { statuses, statusLabel, countsTowardExpectedPay } from '../../appointmentStatus';
+import '../../AppointmentStatus.css';
 
 const toDateKey = (value) => {
     if (!value) return '';
@@ -32,6 +34,7 @@ const appointmentProgram = (appointment, clients) => {
 };
 
 const appointmentWeeklyValue = (appointment, clients) => {
+    if (!countsTowardExpectedPay(appointment)) return 0;
     const program = appointmentProgram(appointment, clients);
     if (program === 'stem') {
         const listedPrice = appointmentTypes.find(type => type.title === appointment.title)?.price;
@@ -53,6 +56,23 @@ const SchedulingPage = () => {
     const [appointments, setAppointments] = useState([]);
     const [selectedAppointmentIds, setSelectedAppointmentIds] = useState([]);
     const [bulkDeleting, setBulkDeleting] = useState(false);
+    const [statusSaving, setStatusSaving] = useState(false);
+    const [appointmentStatusFilter, setAppointmentStatusFilter] = useState('all');
+    const [statusNote, setStatusNote] = useState('');
+    const [cancellationNoticeTime, setCancellationNoticeTime] = useState('');
+    const matchesStatus = appointment => appointmentStatusFilter === 'all' || (appointment.status || 'scheduled') === appointmentStatusFilter;
+    const changeAppointmentStatus = async (ids, value) => {
+        if (!value || !ids.length || statusSaving) return;
+        setStatusSaving(true);
+        try {
+            const { data } = await axios.post(`${apiUrl}/appointments/bulk-status`, { ids, status: value, note: statusNote, ...(value === 'cancelled' && cancellationNoticeTime ? { cancelledAt: new Date(cancellationNoticeTime).toISOString() } : {}) }, { headers: { Authorization: `Bearer ${localStorage.getItem('portalToken') || ''}` } });
+            setAppointments(current => current.map(item => { const updated = data.appointments.find(row => row.id === item.id); return updated ? { ...item, ...updated } : item; }));
+            setEditingAppointment(current => { const updated = data.appointments.find(row => row.id === current?.id); return updated ? { ...current, ...updated } : current; });
+            setSelectedAppointmentIds([]); setStatusNote(''); setCancellationNoticeTime('');
+            setStatus({ type: data.calendarWarning ? 'error' : 'success', message: `${data.appointments.length} appointment(s) updated: ${[...new Set(data.appointments.map(item => statusLabel(item.status)))].join(', ')}.${data.calendarWarning ? ' Status saved, but Google Calendar could not be updated. Check the calendar event.' : ''}` });
+        } catch (error) { setStatus({ type: 'error', message: error.response?.data?.error || 'Could not update appointment status.' }); }
+        finally { setStatusSaving(false); }
+    };
     const [clients, setClients] = useState([]);
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [blockedTimes, setBlockedTimes] = useState([]);
@@ -477,7 +497,7 @@ const safeEndTime = endTime ? String(endTime) : "";
         const formatDate = (d) => new Date(d).toISOString().split('T')[0];
         const calendarDate = formatDate(date);
 
-        const appointmentsOnDate = appointments.filter((appointment) => formatDate(appointment.date) === calendarDate);
+        const appointmentsOnDate = appointments.filter(matchesStatus).filter((appointment) => formatDate(appointment.date) === calendarDate);
 
         return (
             <div>
@@ -566,7 +586,7 @@ const safeEndTime = endTime ? String(endTime) : "";
 
                                     // Render the part of each appointment that falls within this hour.
                                     // Splitting it by hour prevents a :30 appointment from being clipped by the next table row.
-                                    const appointmentEntriesAtTime = appointments.flatMap((appointment) => {
+                                    const appointmentEntriesAtTime = appointments.filter(matchesStatus).flatMap((appointment) => {
                                         const normalizedDate = new Date(appointment.date).toISOString().split('T')[0];
                                         if (normalizedDate !== dayString) return [];
                                         const [startHour, startMinute = 0] = String(appointment.time || '').split(':').map(Number);
@@ -695,7 +715,7 @@ const safeEndTime = endTime ? String(endTime) : "";
                                                             }}
                                                         >
 
-{appointment.firstSegment ? `${clients.find((c) => Number(c.id) === Number(appointment.client_id))?.full_name || 'Unknown'} - ${appointment.title}` : ''}
+{appointment.firstSegment ? `${clients.find((c) => Number(c.id) === Number(appointment.client_id))?.full_name || 'Unknown'} - ${appointment.title} · ${statusLabel(appointment.status)}` : ''}
                                                     
                                                         </div>
                                                     );
@@ -737,7 +757,7 @@ const safeEndTime = endTime ? String(endTime) : "";
         return date >= weekStartKey && date <= weekEndKey;
     });
     const weeklyProfit = weekAppointments.reduce((sum, appointment) => sum + appointmentWeeklyValue(appointment, clients), 0);
-    const dayAppointments = filters.appointments ? appointments.filter((item) => toDateKey(item.date) === selectedKey) : [];
+    const dayAppointments = filters.appointments ? appointments.filter(matchesStatus).filter((item) => toDateKey(item.date) === selectedKey) : [];
     const dayBlocks = filters.blocks ? blockedTimes.filter((item) => toDateKey(item.date) === selectedKey) : [];
 
     return (
@@ -756,7 +776,7 @@ const safeEndTime = endTime ? String(endTime) : "";
                 </div>
                 <div className="stem-view-switch"><button className={isWeekView ? 'active' : ''} onClick={() => setIsWeekView(true)}><FaClock /> Week</button><button className={!isWeekView ? 'active' : ''} onClick={() => setIsWeekView(false)}><FaCalendarAlt /> Month</button></div>
             </div>
-            <div className="stem-weekly-profit"><div><span>WEEKLY SCHEDULED PROFIT</span><strong>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(weeklyProfit)}</strong></div><small>{weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · {weekAppointments.length} appointment{weekAppointments.length === 1 ? '' : 's'} · Updates when appointments are cancelled</small></div>
+            <div className="stem-weekly-profit"><div><span>WEEKLY SCHEDULED PROFIT</span><strong>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(weeklyProfit)}</strong></div><small>{weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · {weekAppointments.length} appointment{weekAppointments.length === 1 ? '' : 's'} · Excludes canceled, not completed, no-show, and needs rescheduling</small></div>
 
             <div className="stem-scheduler-filters">
                 <label className="appointments"><input type="checkbox" checked={filters.appointments} onChange={(e) => setFilters({ ...filters, appointments: e.target.checked })} /> Appointments <span>{appointments.length}</span></label>
@@ -765,6 +785,10 @@ const safeEndTime = endTime ? String(endTime) : "";
             <div className="stem-program-legend"><span className="program-stem">STEM with Lyn</span><span className="program-bwla">BWLA</span><span className="program-united-mentors">United Mentors</span><span className="program-above-beyond">Above &amp; Beyond</span><span className="program-club-z">Club Z</span><span className="program-blocked">Blocked</span></div>
 
             <div className="stem-scheduler-filters">
+                <label>Show status <select value={appointmentStatusFilter} onChange={event => setAppointmentStatusFilter(event.target.value)}><option value="all">All statuses</option>{statuses.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+                <label>Status note (optional)<input value={statusNote} maxLength={1000} onChange={event => setStatusNote(event.target.value)} placeholder="Reason or follow-up" /></label>
+                <label>Cancellation notice received (optional; defaults to now)<input type="datetime-local" value={cancellationNoticeTime} onChange={event => setCancellationNoticeTime(event.target.value)} /></label>
+                <label>Mark selected <select aria-label="Mark selected appointments" value="" disabled={!selectedAppointmentIds.length || statusSaving} onChange={event => changeAppointmentStatus(selectedAppointmentIds, event.target.value)}><option value="">Choose status ({selectedAppointmentIds.length})</option>{statuses.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
                 <button type="button" onClick={() => setSelectedAppointmentIds(dayAppointments.map((appt) => appt.id))}>Select all on this day</button>
                 <button type="button" onClick={() => setSelectedAppointmentIds([])}>Clear selection</button>
                 <button type="button" disabled={!selectedAppointmentIds.length || bulkDeleting} onClick={handleBulkDelete}>Delete selected ({selectedAppointmentIds.length})</button>
@@ -773,6 +797,7 @@ const safeEndTime = endTime ? String(endTime) : "";
             {status.message && <div className={`stem-scheduler-status ${status.type}`}><span>{status.message}</span><button onClick={() => setStatus({ type: '', message: '' })}><FaTimes /></button></div>}
             {isLoading && <div className="stem-scheduler-loading"><span /> Loading schedule…</div>}
 
+            <p className="appointment-status-help">Past appointments stay Scheduled until you review them. Mark Canceled to retain the record and exclude expected pay. Use Needs rescheduling until a new date is agreed; edit the date/time to mark Rescheduled. Same-day cancellations or less than 24 hours’ notice become No-show and use a package session. Status changes do not record payments or refunds.</p>
             <div className="stem-calendar-workspace">
                 {isWeekView ? weekView() : <Calendar value={selectedDate} onChange={setSelectedDate} tileContent={getTileContent} calendarType="gregory" />}
             </div>
@@ -781,7 +806,7 @@ const safeEndTime = endTime ? String(endTime) : "";
                 <div className="stem-agenda-heading"><div><span>SELECTED DAY</span><h2>{selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</h2></div></div>
                 {dayAppointments.length === 0 && dayBlocks.length === 0 && <div className="stem-empty-agenda"><FaCalendarAlt /><strong>Nothing scheduled</strong><span>This day is open. Add an appointment or block off time.</span></div>}
                 <div className="stem-agenda-grid">
-                    {dayAppointments.map((appointment) => <article className={`stem-agenda-card appointment program-${appointmentProgram(appointment, clients)}`} key={appointment.id}><label aria-label={`Select ${appointment.title}`}><input type="checkbox" checked={selectedAppointmentIds.includes(appointment.id)} onChange={(e) => setSelectedAppointmentIds((prev) => e.target.checked ? [...prev, appointment.id] : prev.filter((id) => id !== appointment.id))} /></label><div className="stem-agenda-time">{formatTime(appointment.time)}<small>{formatTime(appointment.end_time)}</small></div><div className="stem-agenda-copy"><span>APPOINTMENT</span><strong>{appointment.title}</strong><p>{clients.find((client) => Number(client.id) === Number(appointment.client_id))?.full_name || appointment.client_name || 'Client'}</p>{appointment.description && <small>{appointment.description}</small>}</div><div className="stem-card-actions"><button onClick={() => handleEditAppointment(appointment)} aria-label="Edit"><FaEdit /></button><button className="danger" onClick={() => handleDeleteAppointment(appointment.id)} aria-label="Delete"><FaTrash /></button></div></article>)}
+                    {dayAppointments.map((appointment) => <article className={`stem-agenda-card appointment program-${appointmentProgram(appointment, clients)}`} key={appointment.id}><label aria-label={`Select ${appointment.title}`}><input type="checkbox" checked={selectedAppointmentIds.includes(appointment.id)} onChange={(e) => setSelectedAppointmentIds((prev) => e.target.checked ? [...prev, appointment.id] : prev.filter((id) => id !== appointment.id))} /></label><div className="stem-agenda-time">{formatTime(appointment.time)}<small>{formatTime(appointment.end_time)}</small></div><div className="stem-agenda-copy"><span className={`appointment-status status-${appointment.status || 'scheduled'}`}>{statusLabel(appointment.status)}</span><strong>{appointment.title}</strong><p>{clients.find((client) => Number(client.id) === Number(appointment.client_id))?.full_name || appointment.client_name || 'Client'}</p>{appointment.description && <small>{appointment.description}</small>}{appointment.status_note && <small>Status note: {appointment.status_note}</small>}</div><div className="stem-card-actions"><label className="appointment-status-control">Status<select aria-label={`Status for ${appointment.client_name || appointment.title}`} value={appointment.status || "scheduled"} disabled={statusSaving} onChange={event => changeAppointmentStatus([appointment.id], event.target.value)}>{statuses.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label><button onClick={() => handleEditAppointment(appointment)} aria-label="Edit"><FaEdit /></button><button className="danger" onClick={() => handleDeleteAppointment(appointment.id)} aria-label="Delete"><FaTrash /></button></div></article>)}
                     {dayBlocks.map((blocked) => <article className="stem-agenda-card block" key={`${blocked.date}-${blocked.timeSlot}`}><div className="stem-agenda-time">{blocked.timeSlot.endsWith('00:00') && Number(blocked.duration) === 24 ? 'All day' : formatTime(blocked.timeSlot.split('-').pop())}</div><div className="stem-agenda-copy"><span>BLOCKED</span><strong>{blocked.label || 'Unavailable'}</strong></div><div className="stem-card-actions"><button className="danger" onClick={() => handleDeleteBlockedTime(blocked)} aria-label="Delete"><FaTrash /></button></div></article>)}
                 </div>
             </section>
@@ -1018,6 +1043,7 @@ const safeEndTime = endTime ? String(endTime) : "";
                             />
                             </label>
                             <small>For third party sessions such as Step Up, enter what you expect to earn. This does not mark the client as paid.</small>
+                            {editingAppointment && <div className="appointment-status-editor"><label>Status note (optional)<input value={statusNote} maxLength={1000} onChange={event => setStatusNote(event.target.value)} /></label><label>Cancellation notice received (optional; defaults to now)<input type="datetime-local" value={cancellationNoticeTime} onChange={event => setCancellationNoticeTime(event.target.value)} /></label><label>Appointment status<select value={editingAppointment.status || 'scheduled'} disabled={statusSaving} onChange={event => changeAppointmentStatus([editingAppointment.id], event.target.value)}>{statuses.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label><small>Status saves immediately. Late cancellations become No-show and use a session. To reschedule, change the date/time and save the appointment.</small></div>}
 
                             <label className="block-all-day">
                                 <input

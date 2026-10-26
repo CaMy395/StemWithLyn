@@ -1,0 +1,9 @@
+.appointment-status{display:inline-block!important;width:fit-content;padding:4px 9px;border-radius:999px;background:#ece8f4;color:#49346b;font-size:.72rem!important;font-weight:800;line-height:1.4}
+.appointment-status.status-completed{background:#dcf3e5;color:#176b39}
+.appointment-status.status-cancelled,.appointment-status.status-no_show,.appointment-status.status-not_completed{background:#fce3e5;color:#9b2638}
+.appointment-status.status-reschedule_needed,.appointment-status.status-rescheduled{background:#fff0ce;color:#825a0a}
+.appointment-status.status-confirmed{background:#deefff;color:#205c91}
+.appointment-status-control{display:grid;gap:4px;font-size:.72rem;font-weight:700;min-width:145px}
+.appointment-status-control select,.stem-scheduler-filters select,.stem-scheduler-filters input:not([type=checkbox]){max-width:100%;padding:8px;border:1px solid #d6cce1;border-radius:8px;background:#fff;color:#342045;font:inherit}
+.appointment-status-help{font-size:.85rem;line-height:1.6;color:#65576c;max-width:960px}
+.stem-agenda-card .stem-card-actions{flex-wrap:wrap}

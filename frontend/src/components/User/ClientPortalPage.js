@@ -1,3 +1,4 @@
+import { statusLabel, isUpcomingStatus } from '../../appointmentStatus';
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { FaCalendarAlt, FaClock, FaPlus, FaUser } from "react-icons/fa";
@@ -52,7 +53,7 @@ const ClientPortalPage = () => {
         const t = a?.time ? String(a.time).slice(0, 5) : "00:00";
         if (!d) return false;
         const dt = new Date(`${d}T${t}:00`);
-        return dt >= now;
+        return dt >= now && isUpcomingStatus(a);
       })
       .sort((a, b) => {
         const da = new Date(
@@ -74,7 +75,7 @@ const ClientPortalPage = () => {
         const t = a?.time ? String(a.time).slice(0, 5) : "00:00";
         if (!d) return false;
         const dt = new Date(`${d}T${t}:00`);
-        return dt < now;
+        return dt < now || !isUpcomingStatus(a);
       })
       .sort((a, b) => {
         const da = new Date(
@@ -203,7 +204,7 @@ const ClientPortalPage = () => {
     if (!appt?.id) return;
 
     const ok = window.confirm(
-      "Cancel this appointment? This action can only be used once."
+      "Cancel this appointment? Same-day cancellations and cancellations with less than 24 hours’ notice are marked No-show and still use a package session."
     );
     if (!ok) return;
 
@@ -429,8 +430,8 @@ const ClientPortalPage = () => {
           </div>
         </section>
 
-        <section className="portal-stats"><article><FaCalendarAlt /><div><strong>{upcoming.length}</strong><span>Upcoming</span></div></article><article><FaClock /><div><strong>{past.length}</strong><span>Completed</span></div></article><article><FaUser /><div><strong>{client?.category || "STEM"}</strong><span>Program</span></div></article></section>
-        {packages.length > 0 && <section className="portal-card"><h2>Your tutoring packages</h2><p>Book your remaining sessions whenever an available time works for you.</p>{packages.map((item) => <div key={item.key} style={{ display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'space-between', padding: '12px 0' }}><span>{item.title.replace(' - SCHEDULING', '')}: <strong>{item.remaining} of {item.purchased} sessions left</strong></span>{item.remaining > 0 && <Link to={`/client-portal/schedule?appointmentType=${encodeURIComponent(item.title)}`}>Book a session</Link>}</div>)}</section>}
+        <section className="portal-stats"><article><FaCalendarAlt /><div><strong>{upcoming.length}</strong><span>Upcoming</span></div></article><article><FaClock /><div><strong>{appointments.filter(item => item.status === 'completed').length}</strong><span>Completed</span></div></article><article><FaUser /><div><strong>{client?.category || "STEM"}</strong><span>Program</span></div></article></section>
+        {packages.length > 0 && <section className="portal-card"><h2>Your tutoring packages</h2><p>Book your remaining sessions whenever an available time works for you. Same-day cancellations, cancellations with less than 24 hours’ notice, and no-shows count as used sessions.</p>{packages.map((item) => <div key={item.key} style={{ display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'space-between', padding: '12px 0' }}><span>{item.title.replace(' - SCHEDULING', '')}: <strong>{item.remaining} of {item.purchased} sessions left</strong></span>{item.remaining > 0 && <Link to={`/client-portal/schedule?appointmentType=${encodeURIComponent(item.title)}`}>Book a session</Link>}</div>)}</section>}
 
         {err && <div className="portal-error">{err}</div>}
 
@@ -496,7 +497,7 @@ const ClientPortalPage = () => {
                     return (
                       <div key={a.id} className="appointment-card-portal">
                         <div className="appt-main">
-                          <span className="appt-badge">Upcoming</span>
+                          <span className="appt-badge">{statusLabel(a.status)}</span>
                           {paymentText(a) && <span className="appt-payment">{paymentText(a)}</span>}
                           <h3>{a.title || "Appointment"}</h3>
 
@@ -552,20 +553,20 @@ const ClientPortalPage = () => {
             <section className="portal-card">
               <div className="section-header">
                 <h2>Appointment History</h2>
-                <span>{past.length} past</span>
+                <span>{past.length} records</span>
               </div>
 
               {past.length === 0 ? (
                 <div className="empty-state">
                   <h3>No past appointments yet.</h3>
-                  <p>Your completed tutoring sessions will show here.</p>
+                  <p>Past sessions and appointment outcomes will show here.</p>
                 </div>
               ) : (
                 <div className="appointment-list">
                   {past.map((a) => (
                     <div key={a.id} className="appointment-card-portal past">
                       <div className="appt-main">
-                        <span className="appt-badge muted">Completed</span>
+                        <span className="appt-badge muted">{statusLabel(a.status)}</span>{a.status === "no_show" && <span className="appt-payment">Counts as a used session</span>}
                         {paymentText(a) && <span className="appt-payment">{paymentText(a)}</span>}
                         <h3>{a.title || "Appointment"}</h3>
 

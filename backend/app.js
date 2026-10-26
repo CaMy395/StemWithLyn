@@ -8,6 +8,8 @@ import moment from 'moment-timezone';
 import path from 'path'; // Import path to handle static file serving
 import { fileURLToPath } from 'url'; // Required for ES module __dirname
 import bcrypt from 'bcrypt';
+import { ensureAppointmentStatusSchema, earnsAppointmentPay, inactiveAppointmentStatuses, cancellationStatus, consumesPackageSession } from './appointmentStatus.js';
+import createAppointmentStatusRouter from './routes/appointmentStatus.js';
 import pool from './db.js'; // Import the centralized pool connection
 import { expandAvailability, serviceDuration } from './schedulingSlots.js';
 import axios from "axios"; // ✅ Import axios
@@ -312,6 +314,13 @@ wss.on('connection', (ws, req) => {
 
 app.use(express.json({ verify: (req, _res, buffer) => { req.rawBody = buffer.toString('utf8'); } }));
 app.set('trust proxy', 1);
+await ensureAppointmentStatusSchema(pool);
+app.use('/appointments', createAppointmentStatusRouter(pool, portalTokenSecret, deleteGoogleCalendarEvent, async appt => {
+  const result = await pool.query('SELECT email FROM clients WHERE id = $1', [appt.client_id]);
+  if (appt.google_event_id) await updateGoogleCalendarEvent(appt, result.rows[0], false);
+  else await createGoogleCalendarEventAndStore(appt, result.rows[0], false);
+}));
+
 app.use('/api/stem-assistant', stemAssistantRouter);
 app.use('/api/study', createStudyLibraryRouter(pool, portalTokenSecret));
 app.use('/api/messages', createPortalMessagesRouter(pool, portalTokenSecret, sendPortalMessageNotification));
@@ -1008,11 +1017,13 @@ app.get("/client/appointments", async (req, res) => {
 /**
  * POST /client/appointments/:id/cancel
  */
-// ✅ Client cancels their own appointment (deletes Google event + DB row)
+// Client cancellation retains the appointment outcome and removes the calendar event.
 app.post("/client/appointments/:id/cancel", async (req, res) => {
   const { id } = req.params;
 
   try {
+    const auth = await requireClientUser(req);
+    if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
     // 1) Load appointment (need google_event_id)
     const apptRes = await pool.query(
       `SELECT *
@@ -1027,6 +1038,10 @@ app.post("/client/appointments/:id/cancel", async (req, res) => {
     }
 
     const appt = apptRes.rows[0];
+    const owner = await pool.query('SELECT id FROM clients WHERE id = $1 AND user_id = $2', [appt.client_id, auth.user.id]);
+    if (!owner.rowCount) return res.status(403).json({ error: 'This appointment belongs to another client.' });
+    if (['cancelled', 'no_show'].includes(appt.status)) return res.json({ success: true, status: appt.status });
+    const cancelledStatus = cancellationStatus(appt);
     if (appt.paid && packageDetails(appt.title)) await loadPackagePurchases(pool, appt.client_id);
 
     // 2) Increment client cancel count
@@ -1043,18 +1058,22 @@ app.post("/client/appointments/:id/cancel", async (req, res) => {
       // do not block cancellation
     }
 
-    // 3) Delete Google Calendar event FIRST (so no ghost events)
+    // 3) Remove the calendar event while retaining a retry reference if it fails.
+    let calendarRemoved = false;
     try {
       await deleteGoogleCalendarEvent(appt);
+      calendarRemoved = true;
     } catch (e) {
       console.error("❌ Google calendar delete failed (client cancel):", e?.message || e);
       // do not block cancellation
     }
 
-    // 4) Delete appointment row
-    await pool.query(`DELETE FROM appointments WHERE id = $1`, [id]);
+    // 4) Retain the canceled appointment and payment record
+    await pool.query(`UPDATE appointments SET status = $4, status_updated_at = now(), google_event_id = CASE WHEN $3 THEN NULL ELSE google_event_id END,
+      status_history = status_history || jsonb_build_array(jsonb_build_object('from', status, 'to', $4::text, 'at', now(), 'userId', $2::int))
+      WHERE id = $1`, [id, auth.user.id, calendarRemoved, cancelledStatus]);
 
-    return res.json({ success: true });
+    return res.json({ success: true, status: cancelledStatus });
   } catch (error) {
     console.error("❌ Error cancelling appointment:", error);
     return res.status(500).json({ error: "Failed to cancel appointment." });
@@ -1130,14 +1149,14 @@ app.post("/client/appointments/:id/reschedule", async (req, res) => {
 
     // prevent conflicts
     const conflict = await pool.query(
-      `SELECT id FROM appointments WHERE date = $1 AND time < $4::time AND COALESCE(end_time, time + interval '30 minutes') > $2::time AND id <> $3 LIMIT 1`,
+      `SELECT id FROM appointments WHERE status NOT IN ('cancelled', 'not_completed', 'no_show', 'reschedule_needed') AND date = $1 AND time < $4::time AND COALESCE(end_time, time + interval '30 minutes') > $2::time AND id <> $3 LIMIT 1`,
       [date, newTime, id, newEnd]
     );
     if (conflict.rowCount > 0) return res.status(409).json({ error: "That time slot is already booked." });
 
     await pool.query(
       `UPDATE appointments
-       SET date = $1, time = $2, end_time = $3, client_reschedule_count = client_reschedule_count + 1
+       SET date = $1, time = $2, end_time = $3, status = 'rescheduled', status_updated_at = now(), status_history = status_history || jsonb_build_array(jsonb_build_object('from', status, 'to', 'rescheduled', 'at', now(), 'oldDate', date, 'oldTime', time)), client_reschedule_count = COALESCE(client_reschedule_count, 0) + 1
        WHERE id = $4
        RETURNING *`,
       [date, newTime, newEnd, id]
@@ -1281,7 +1300,7 @@ cron.schedule('0 8 * * *', async () => {
             SELECT a.*, c.full_name, c.email
             FROM appointments a
             JOIN clients c ON a.client_id = c.id
-            WHERE a.date = $1
+            WHERE a.date = $1 AND a.status NOT IN ('cancelled', 'not_completed', 'no_show', 'reschedule_needed')
         `, [tomorrow]);
 
         for (const appt of result.rows) {
@@ -1945,7 +1964,7 @@ app.post('/api/finalize-payment-and-book', async (req, res) => {
 
     // 3️⃣ Availability safety check
     const booked = await pool.query(
-      `SELECT 1 FROM appointments WHERE date=$1 AND time=$2`,
+      `SELECT 1 FROM appointments WHERE status NOT IN ('cancelled', 'not_completed', 'no_show', 'reschedule_needed') AND date=$1 AND time=$2`,
       [date, formattedTime]
     );
     if (booked.rowCount > 0) {
@@ -2280,7 +2299,7 @@ app.post('/appointments', async (req, res) => {
 
       // conflict check (date + time)
       const conflict = await pool.query(
-        `SELECT id FROM appointments WHERE date = $1 AND time = $2 LIMIT 1`,
+        `SELECT id FROM appointments WHERE status NOT IN ('cancelled', 'not_completed', 'no_show', 'reschedule_needed') AND date = $1 AND time = $2 LIMIT 1`,
         [d, formattedTime]
       );
 
@@ -2453,7 +2472,7 @@ app.get('/appointments/by-date', async (req, res) => {
         c.category  AS client_category
       FROM appointments a
       LEFT JOIN clients c ON c.id = a.client_id
-      WHERE a.date = $1
+      WHERE a.date = $1 AND a.status NOT IN ('cancelled', 'not_completed', 'no_show', 'reschedule_needed')
       ORDER BY a.time;
     `, [date]);
 
@@ -2508,7 +2527,7 @@ app.get('/blocked-times', async (req, res) => {
 
         // ✅ Fetch already booked appointments from `appointments`
         const bookedTimesResult = await pool.query(
-            `SELECT time FROM appointments WHERE date = $1`,
+            `SELECT time FROM appointments WHERE status NOT IN ('cancelled', 'not_completed', 'no_show', 'reschedule_needed') AND date = $1`,
             [date]
         );
         const bookedTimes = bookedTimesResult.rows.map(row => row.time);
@@ -2560,6 +2579,13 @@ app.patch('/appointments/:id', async (req, res) => {
         }
 
         const existingAppointment = existingAppointmentResult.rows[0];
+        if (inactiveAppointmentStatuses.includes(existingAppointment.status)) {
+          const conflict = await pool.query(`SELECT id FROM appointments WHERE id <> $1 AND date = $2
+            AND status <> ALL($5::text[]) AND time < COALESCE($4::time, $3::time + interval '30 minutes')
+            AND COALESCE(end_time, time + interval '30 minutes') > $3::time LIMIT 1`,
+          [appointmentId, date, time, end_time || null, inactiveAppointmentStatuses]);
+          if (conflict.rowCount) return res.status(409).json({ error: 'That time is already booked. Please choose another time.' });
+        }
         const scheduleChanged = title !== existingAppointment.title || description !== existingAppointment.description ||
           String(date).slice(0, 10) !== new Date(existingAppointment.date).toISOString().slice(0, 10) ||
           String(time).slice(0, 5) !== String(existingAppointment.time).slice(0, 5) ||
@@ -2570,7 +2596,10 @@ app.patch('/appointments/:id', async (req, res) => {
         const result = await pool.query(
             `UPDATE appointments 
              SET title = $1, description = $2, date = $3, time = $4, end_time = $5, client_id = $6,
-                 price = COALESCE($8, price)
+                 price = COALESCE($8, price),
+                 status_updated_at = CASE WHEN date IS DISTINCT FROM $3::date OR time IS DISTINCT FROM $4::time OR end_time IS DISTINCT FROM $5::time THEN now() ELSE status_updated_at END,
+                 status_history = CASE WHEN date IS DISTINCT FROM $3::date OR time IS DISTINCT FROM $4::time OR end_time IS DISTINCT FROM $5::time THEN status_history || jsonb_build_array(jsonb_build_object('from', status, 'to', 'rescheduled', 'at', now(), 'oldDate', date, 'oldTime', time)) ELSE status_history END,
+                 status = CASE WHEN date IS DISTINCT FROM $3::date OR time IS DISTINCT FROM $4::time OR end_time IS DISTINCT FROM $5::time THEN 'rescheduled' ELSE status END
              WHERE id = $7 
              RETURNING *`,
             [title, description, date, time, end_time, client_id, appointmentId, expectedPayout]
@@ -2592,7 +2621,8 @@ try {
 
   if (apptRes.rowCount > 0) {
     const appt = apptRes.rows[0];
-    await updateGoogleCalendarEvent(appt, { email: appt.email }, shouldNotifyClient);
+    if (appt.google_event_id) await updateGoogleCalendarEvent(appt, { email: appt.email }, shouldNotifyClient);
+    else if (appt.status === 'rescheduled') await createGoogleCalendarEventAndStore(appt, { email: appt.email }, shouldNotifyClient);
   }
 } catch (e) {
   console.error("❌ Google calendar update failed:", e?.message || e);
@@ -2774,7 +2804,7 @@ const loadPackagePurchases = async (db, clientId) => {
     total integer NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now()
   )`);
-  const appointments = await db.query('SELECT id, title, paid, price, date, time, end_time FROM appointments WHERE client_id = $1', [clientId]);
+  const appointments = await db.query('SELECT id, title, paid, price, date, time, end_time, status FROM appointments WHERE client_id = $1', [clientId]);
   for (const appt of appointments.rows) {
     const details = packageDetails(appt.title);
     if (!details || !appt.paid || Number(appt.price) <= 0 || /SCHEDULING/i.test(appt.title)) continue;
@@ -2794,7 +2824,7 @@ const packageBalances = (purchases, appointments) => {
     current.purchased += Number(purchase.total);
     balances.set(details.key, current);
   }
-  for (const appt of appointments) {
+  for (const appt of appointments.filter(item => consumesPackageSession(item.status))) {
     for (const balance of balances.values()) {
       if (appt.title === balance.title) balance.booked += 1;
       else if (packageDetails(appt.title)?.key === balance.key && appt.paid && Number(appt.price) > 0) balance.booked += 1;
@@ -2839,7 +2869,7 @@ app.get('/admin/clients/:clientId/portal-preview', async (req, res) => {
     const clientResult = await pool.query(`SELECT c.id, c.full_name, c.email, c.phone, c.category, c.user_id, u.username
       FROM clients c LEFT JOIN users u ON u.id = c.user_id WHERE c.id = $1 LIMIT 1`, [clientId]);
     if (!clientResult.rowCount) return res.status(404).json({ error: 'Client not found.' });
-    const appointmentResult = await pool.query(`SELECT id, title, description, date, time, end_time, paid, price
+    const appointmentResult = await pool.query(`SELECT id, title, description, date, time, end_time, paid, price, status, status_note
       FROM appointments WHERE client_id = $1 ORDER BY date, time`, [clientId]);
     const packageData = await loadPackagePurchases(pool, clientId);
     return res.json({ client: clientResult.rows[0], appointments: appointmentResult.rows,
@@ -2875,7 +2905,7 @@ app.post('/client/packages/book', async (req, res) => {
     const weekday = new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long', timeZone: process.env.BUSINESS_TIME_ZONE || 'America/New_York' });
     const slot = await db.query(`SELECT * FROM weekly_availability WHERE lower(weekday) = lower($1) AND appointment_type = $2`, [weekday, title]);
     if (!expandAvailability(slot.rows, serviceDuration(title)).some((item) => item.start_time.slice(0, 5) === time.slice(0, 5) && item.end_time.slice(0, 5) === end_time.slice(0, 5))) { await db.query('ROLLBACK'); return res.status(409).json({ error: 'This time is no longer available.' }); }
-    const conflict = await db.query(`SELECT 1 FROM appointments WHERE date = $1 AND time < $3::time AND COALESCE(end_time, time + interval '30 minutes') > $2::time LIMIT 1`, [date, time, end_time]);
+    const conflict = await db.query(`SELECT 1 FROM appointments WHERE status NOT IN ('cancelled', 'not_completed', 'no_show', 'reschedule_needed') AND date = $1 AND time < $3::time AND COALESCE(end_time, time + interval '30 minutes') > $2::time LIMIT 1`, [date, time, end_time]);
     const blocks = await db.query('SELECT time_slot, label FROM schedule_blocks WHERE date = $1', [date]);
     const start = timeToMinutes(time), end = timeToMinutes(end_time);
     const blocked = blocks.rows.some((block) => { const blockStart = timeToMinutes(extractBlockedStartTime(block.time_slot)); const hours = Number(String(block.label || '').match(/\(([\d.]+)\s*hours?\)/i)?.[1]) || 1; return start < blockStart + hours * 60 && end > blockStart; });
@@ -2956,7 +2986,7 @@ app.get('/schedule/availability', async (req, res) => {
 
         // Fetch booked appointments for the given date
         const appointmentsResult = await pool.query(
-            `SELECT time FROM appointments WHERE date = $1`,
+            `SELECT time FROM appointments WHERE status NOT IN ('cancelled', 'not_completed', 'no_show', 'reschedule_needed') AND date = $1`,
             [date]
         );
         const bookedTimes = appointmentsResult.rows.map(row => `${date}-${row.time}`);
@@ -3317,6 +3347,7 @@ app.get('/api/profits', async (req, res) => {
 
 // Helper: Calculate the correct profit amount
 function determineProfitAmount(appointment, clientCategory) {
+  if (!earnsAppointmentPay(appointment.status)) return 0;
   const category = String(clientCategory || '').toLowerCase();
   const rate = category.includes('club z') ? 25
     : category.includes('above') && category.includes('beyond') ? 40
@@ -3340,7 +3371,7 @@ app.get('/api/appointment-earnings', async (req, res) => {
     const payload = jwt.verify(token, portalTokenSecret);
     const user = await pool.query('SELECT role FROM users WHERE id = $1 LIMIT 1', [payload.userId]);
     if (user.rows[0]?.role !== 'admin') return res.status(403).json({ error: 'Admin account required.' });
-    const result = await pool.query(`SELECT a.id, a.title, a.date, a.time, a.end_time,
+    const result = await pool.query(`SELECT a.id, a.title, a.date, a.time, a.end_time, a.status, a.status_note,
       c.full_name AS client_name, c.category AS client_category
       FROM appointments a JOIN clients c ON c.id = a.client_id
       WHERE c.category ILIKE ANY(ARRAY['%club z%', '%above%beyond%', '%united mentor%', '%bwla%'])
@@ -3361,7 +3392,7 @@ app.post('/api/update-profits-for-old-payments', async (req, res) => {
     try {
       // Fetch all paid appointments and join with client categories
       const appointmentsResult = await pool.query(`
-        SELECT a.id, a.title, a.price, a.time, a.end_time, c.category
+        SELECT a.id, a.title, a.price, a.time, a.end_time, a.status, c.category
         FROM appointments a
         JOIN clients c ON a.client_id = c.id
         WHERE a.paid = true
@@ -3374,7 +3405,7 @@ app.post('/api/update-profits-for-old-payments', async (req, res) => {
   
       for (const appt of appointmentsResult.rows) {
         const calculatedAmount = determineProfitAmount(appt, appt.category);
-        if (calculatedAmount === null) continue;
+        if (calculatedAmount === null || !earnsAppointmentPay(appt.status)) continue;
   
         const isThirdParty = appt.category && appt.category !== 'StemwithLyn';
   

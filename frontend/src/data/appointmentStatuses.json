@@ -1,0 +1,10 @@
+[
+  { "value": "scheduled", "label": "Scheduled", "active": true, "earns": true },
+  { "value": "confirmed", "label": "Confirmed", "active": true, "earns": true },
+  { "value": "completed", "label": "Completed", "active": true, "earns": true },
+  { "value": "not_completed", "label": "Not completed", "active": false, "earns": false },
+  { "value": "cancelled", "label": "Canceled", "active": false, "earns": false },
+  { "value": "reschedule_needed", "label": "Needs rescheduling", "active": false, "earns": false },
+  { "value": "rescheduled", "label": "Rescheduled", "active": true, "earns": true },
+  { "value": "no_show", "label": "No-show", "active": false, "earns": false }
+]
