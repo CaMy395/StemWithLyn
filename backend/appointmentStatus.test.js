@@ -35,13 +35,20 @@ test('package balances count completed and no-show sessions, returning timely ca
   vm.runInContext(`${details}\n${balances}\nglobalThis.balance = packageBalances;`, context);
   const purchased = [{ title: 'Virtual Tutoring Package (6 sessions, @ $330.00)', total: 6 }];
   const title = 'Virtual Tutoring Package (6 sessions - SCHEDULING)';
-  const appointments = ['completed', 'no_show', 'cancelled'].map(status => ({ title, status }));
+  const appointments = ['completed', 'no_show', 'cancelled', 'confirmed', 'not_completed', 'reschedule_needed'].map(status => ({ title, status }));
   let result = context.balance(purchased, appointments)[0];
-  assert.equal(result.booked, 2);
-  assert.equal(result.remaining, 4);
+  assert.equal(result.booked, 3);
+  assert.equal(result.used, 2);
+  assert.equal(result.completed, 1);
+  assert.equal(result.noShows, 1);
+  assert.equal(result.reserved, 1);
+  assert.equal(result.remaining, 3);
   appointments[1].status = 'cancelled';
   result = context.balance(purchased, appointments)[0];
-  assert.equal(result.remaining, 5);
+  assert.equal(result.remaining, 4);
+  assert.equal(result.used, 1);
+  assert.equal(result.noShows, 0);
+  assert.equal(result.reserved, 1);
 });
 
 test('client cancellation persists the same late/early policy and leaves no-show results unchanged on retry', async () => {

@@ -2820,14 +2820,20 @@ const packageBalances = (purchases, appointments) => {
   for (const purchase of purchases) {
     const details = packageDetails(purchase.title);
     if (!details) continue;
-    const current = balances.get(details.key) || { ...details, purchased: 0, booked: 0 };
+    const current = balances.get(details.key) || { ...details, purchased: 0, booked: 0, used: 0, reserved: 0, completed: 0, noShows: 0 };
     current.purchased += Number(purchase.total);
     balances.set(details.key, current);
   }
   for (const appt of appointments.filter(item => consumesPackageSession(item.status))) {
     for (const balance of balances.values()) {
-      if (appt.title === balance.title) balance.booked += 1;
-      else if (packageDetails(appt.title)?.key === balance.key && appt.paid && Number(appt.price) > 0) balance.booked += 1;
+      const matches = appt.title === balance.title || (packageDetails(appt.title)?.key === balance.key && appt.paid && Number(appt.price) > 0);
+      if (!matches) continue;
+      balance.booked += 1;
+      if (appt.status === 'completed' || appt.status === 'no_show') {
+        balance.used += 1;
+        if (appt.status === 'completed') balance.completed += 1;
+        else balance.noShows += 1;
+      } else balance.reserved += 1;
     }
   }
   return [...balances.values()].map((balance) => ({ ...balance, remaining: Math.max(0, balance.purchased - balance.booked) }));
