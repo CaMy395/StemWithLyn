@@ -598,4 +598,17 @@ const sendAppointmentReminderEmail = async ({ email, full_name, date, time, titl
 
 export { sendAppointmentReminderEmail };
 
+export async function sendAppointmentConfirmationRequest({ email, full_name, date, time, title, confirmationUrl }) {
+  const sessionDate = new Intl.DateTimeFormat('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC',
+  }).format(new Date(`${date}T12:00:00Z`));
+  await transporter.sendMail({
+    from: EMAIL_USER,
+    replyTo: process.env.APPOINTMENT_REPLY_EMAIL || EMAIL_USER,
+    to: email,
+    subject: `Please confirm your STEM with Lyn session: ${sessionDate}`,
+    text: `Hello ${full_name || 'there'},\n\nPlease confirm your attendance using this link:\n${confirmationUrl}\n\nSession: ${title || 'Tutoring session'}\nDate: ${sessionDate}\nTime: ${formatTime(time)} (America/New_York)\n\nConfirm before midnight tonight (America/New_York), before your session day. If you do not confirm, your session will be canceled without counting against you or using a package session. Same-day bookings are exempt from this automatic cutoff.\n\nEmail replies do not automatically confirm attendance. If you need help or want to reschedule, please contact Lyn.\n\nThank you!\nSTEM with Lyn`,
+  });
+}
+
 export default transporter;

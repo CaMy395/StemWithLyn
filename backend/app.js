@@ -10,6 +10,9 @@ import { fileURLToPath } from 'url'; // Required for ES module __dirname
 import bcrypt from 'bcrypt';
 import { ensureAppointmentStatusSchema, earnsAppointmentPay, inactiveAppointmentStatuses, cancellationStatus, consumesPackageSession } from './appointmentStatus.js';
 import createAppointmentStatusRouter from './routes/appointmentStatus.js';
+import cron from 'node-cron';
+import { ensureAppointmentReminderSchema, sendDueAppointmentReminders, createSessionConfirmationRouter, cancelUnconfirmedSessions } from './appointmentReminders.js';
+import { sendAppointmentConfirmationRequest } from './emailService.js';
 import pool from './db.js'; // Import the centralized pool connection
 import { expandAvailability, serviceDuration } from './schedulingSlots.js';
 import axios from "axios"; // ✅ Import axios
@@ -315,6 +318,16 @@ wss.on('connection', (ws, req) => {
 app.use(express.json({ verify: (req, _res, buffer) => { req.rawBody = buffer.toString('utf8'); } }));
 app.set('trust proxy', 1);
 await ensureAppointmentStatusSchema(pool);
+await ensureAppointmentReminderSchema(pool);
+app.use('/session-confirmation', createSessionConfirmationRouter(pool));
+const runAppointmentReminders = () => sendDueAppointmentReminders(pool, sendAppointmentConfirmationRequest)
+  .catch(error => console.error('Appointment confirmation check failed:', error.message));
+cron.schedule('*/5 * * * *', runAppointmentReminders, { timezone: TZ });
+void runAppointmentReminders();
+const runConfirmationCutoff = () => cancelUnconfirmedSessions(pool, deleteGoogleCalendarEvent)
+  .catch(error => console.error('Midnight confirmation cutoff failed:', error.message));
+cron.schedule('* * * * *', runConfirmationCutoff, { timezone: TZ });
+void runConfirmationCutoff();
 app.use('/appointments', createAppointmentStatusRouter(pool, portalTokenSecret, deleteGoogleCalendarEvent, async appt => {
   const result = await pool.query('SELECT email FROM clients WHERE id = $1', [appt.client_id]);
   if (appt.google_event_id) await updateGoogleCalendarEvent(appt, result.rows[0], false);
