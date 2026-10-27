@@ -73,6 +73,7 @@ test('confirmation requires a POST; expired or changed sessions cannot be confir
   try {
     const preview = await fetch(url);
     assert.equal(preview.status, 200);
+    assert.equal(preview.headers.get('referrer-policy'), 'same-origin');
     assert.match(await preview.text(), /Yes, I will attend/);
     assert.equal(calls.length, 0);
     assert.equal((await fetch(url, { method: 'POST' })).status, 200);

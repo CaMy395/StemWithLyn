@@ -55,7 +55,9 @@ export function createSessionConfirmationRouter(pool) {
   router.use(express.urlencoded({ extended: false }));
   router.use((_req, res, next) => {
     res.set('Cache-Control', 'no-store');
-    res.set('Referrer-Policy', 'no-referrer');
+    // Keep the origin on our confirmation form POST so the app's CORS guard
+    // accepts it. Cross-origin navigation still receives no token-bearing URL.
+    res.set('Referrer-Policy', 'same-origin');
     next();
   });
   // Email scanners can open GET links without confirming attendance.
