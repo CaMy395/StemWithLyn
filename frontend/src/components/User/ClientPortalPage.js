@@ -567,6 +567,7 @@ const ClientPortalPage = () => {
                     <div key={a.id} className="appointment-card-portal past">
                       <div className="appt-main">
                         <span className="appt-badge muted">{statusLabel(a.status)}</span>{a.status === "no_show" && <span className="appt-payment">Counts as a used session</span>}
+                        {a.status_note && <p><b>Status note:</b> {a.status_note}</p>}
                         {paymentText(a) && <span className="appt-payment">{paymentText(a)}</span>}
                         <h3>{a.title || "Appointment"}</h3>
 

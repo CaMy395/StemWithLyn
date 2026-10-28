@@ -57,10 +57,12 @@ const SchedulingPage = () => {
     const [selectedAppointmentIds, setSelectedAppointmentIds] = useState([]);
     const [bulkDeleting, setBulkDeleting] = useState(false);
     const [statusSaving, setStatusSaving] = useState(false);
-    const [appointmentStatusFilter, setAppointmentStatusFilter] = useState('all');
+    const [appointmentStatusFilter, setAppointmentStatusFilter] = useState('active');
     const [statusNote, setStatusNote] = useState('');
     const [cancellationNoticeTime, setCancellationNoticeTime] = useState('');
-    const matchesStatus = appointment => appointmentStatusFilter === 'all' || (appointment.status || 'scheduled') === appointmentStatusFilter;
+    const matchesStatus = appointment => appointmentStatusFilter === 'all' || (appointmentStatusFilter === 'active'
+        ? statuses.some(item => item.value === (appointment.status || 'scheduled') && item.active)
+        : (appointment.status || 'scheduled') === appointmentStatusFilter);
     const changeAppointmentStatus = async (ids, value) => {
         if (!value || !ids.length || statusSaving) return;
         setStatusSaving(true);
@@ -754,7 +756,7 @@ const safeEndTime = endTime ? String(endTime) : "";
     const weekEndKey = toDateKey(weekEnd);
     const weekAppointments = appointments.filter(appointment => {
         const date = toDateKey(appointment.date);
-        return date >= weekStartKey && date <= weekEndKey;
+        return date >= weekStartKey && date <= weekEndKey && countsTowardExpectedPay(appointment);
     });
     const weeklyProfit = weekAppointments.reduce((sum, appointment) => sum + appointmentWeeklyValue(appointment, clients), 0);
     const dayAppointments = filters.appointments ? appointments.filter(matchesStatus).filter((item) => toDateKey(item.date) === selectedKey) : [];
@@ -779,13 +781,13 @@ const safeEndTime = endTime ? String(endTime) : "";
             <div className="stem-weekly-profit"><div><span>WEEKLY SCHEDULED PROFIT</span><strong>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(weeklyProfit)}</strong></div><small>{weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · {weekAppointments.length} appointment{weekAppointments.length === 1 ? '' : 's'} · Excludes canceled, not completed, no-show, and needs rescheduling</small></div>
 
             <div className="stem-scheduler-filters">
-                <label className="appointments"><input type="checkbox" checked={filters.appointments} onChange={(e) => setFilters({ ...filters, appointments: e.target.checked })} /> Appointments <span>{appointments.length}</span></label>
+                <label className="appointments"><input type="checkbox" checked={filters.appointments} onChange={(e) => setFilters({ ...filters, appointments: e.target.checked })} /> Appointments <span>{appointments.filter(matchesStatus).length}</span></label>
                 <label className="blocks"><input type="checkbox" checked={filters.blocks} onChange={(e) => setFilters({ ...filters, blocks: e.target.checked })} /> Blocked time <span>{blockedTimes.length}</span></label>
             </div>
             <div className="stem-program-legend"><span className="program-stem">STEM with Lyn</span><span className="program-bwla">BWLA</span><span className="program-united-mentors">United Mentors</span><span className="program-above-beyond">Above &amp; Beyond</span><span className="program-club-z">Club Z</span><span className="program-blocked">Blocked</span></div>
 
             <div className="stem-scheduler-filters">
-                <label>Show status <select value={appointmentStatusFilter} onChange={event => setAppointmentStatusFilter(event.target.value)}><option value="all">All statuses</option>{statuses.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+                <label>Show status <select value={appointmentStatusFilter} onChange={event => setAppointmentStatusFilter(event.target.value)}><option value="active">Active sessions</option><option value="all">All statuses (including history)</option>{statuses.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
                 <label>Status note (optional)<input value={statusNote} maxLength={1000} onChange={event => setStatusNote(event.target.value)} placeholder="Reason or follow-up" /></label>
                 <label>Cancellation notice received (optional; defaults to now)<input type="datetime-local" value={cancellationNoticeTime} onChange={event => setCancellationNoticeTime(event.target.value)} /></label>
                 <label>Mark selected <select aria-label="Mark selected appointments" value="" disabled={!selectedAppointmentIds.length || statusSaving} onChange={event => changeAppointmentStatus(selectedAppointmentIds, event.target.value)}><option value="">Choose status ({selectedAppointmentIds.length})</option>{statuses.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>

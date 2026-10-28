@@ -10,7 +10,7 @@ test('past sessions are not automatically completed and canceled future sessions
   const date = offset => { const value = new Date(); value.setDate(value.getDate() + offset); return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`; };
   const appointments = [
     { id: 1, title: 'Unreviewed session', date: date(-2), time: '15:00' },
-    { id: 2, title: 'Canceled future session', date: date(2), time: '15:00', status: 'cancelled' },
+    { id: 2, title: 'Canceled future session', date: date(2), time: '15:00', status: 'cancelled', status_note: 'Automatically canceled: not confirmed by midnight. No penalty; package session not used.' },
     { id: 3, title: 'Finished session', date: date(-1), time: '15:00', status: 'completed' },
     { id: 4, title: 'Next session', date: date(1), time: '15:00', status: 'confirmed' },
     { id: 5, title: 'Late cancellation', date: date(-1), time: '17:00', status: 'no_show' },
@@ -26,6 +26,7 @@ test('past sessions are not automatically completed and canceled future sessions
     const canceled = screen.getByRole('heading', { name: 'Canceled future session' }).closest('.appointment-card-portal');
     expect(canceled.classList.contains('past')).toBe(true);
     expect(within(canceled).getByText('Canceled')).toBeTruthy();
+    expect(within(canceled).getByText(/Automatically canceled: not confirmed by midnight/)).toBeTruthy();
     expect(within(canceled).queryByRole('button', { name: /cancel/i })).toBeNull();
     const noShow = screen.getByRole('heading', { name: 'Late cancellation' }).closest('.appointment-card-portal');
     expect(within(noShow).getByText('No-show')).toBeTruthy();
